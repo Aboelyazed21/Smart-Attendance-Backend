@@ -1,9 +1,10 @@
 require("dotenv").config();
 
 const app = require("./app");
-const { testConnection } = require("./config/db");
+const { pool, testConnection } = require("./config/db");
 const { execFile } = require("child_process");
 const path = require("path");
+const bcrypt = require("bcryptjs");
 
 const PORT = Number(process.env.PORT || 5000);
 
@@ -56,11 +57,48 @@ function importDatabaseIfEnabled() {
   });
 }
 
+async function resetAdminIfEnabled() {
+  if (process.env.ADMIN_RESET !== "true") {
+    return;
+  }
+
+  const adminEmail = "admin@smartattendance.com";
+  const temporaryPassword =
+    process.env.ADMIN_RESET_PASSWORD || "Admin@12345";
+
+  console.log("========================================");
+  console.log("ADMIN RESET MODE IS ENABLED");
+  console.log(`Resetting password for: ${adminEmail}`);
+  console.log("========================================");
+
+  const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+
+  const [result] = await pool.query(
+    `
+      UPDATE users
+      SET password_hash = ?
+      WHERE email = ?
+    `,
+    [passwordHash, adminEmail]
+  );
+
+  if (!result.affectedRows) {
+    throw new Error(
+      `Admin user not found: ${adminEmail}`
+    );
+  }
+
+  console.log("Admin password reset successfully.");
+  console.log("Temporary password: Admin@12345");
+}
+
 async function start() {
   try {
     await testConnection();
 
     await importDatabaseIfEnabled();
+
+    await resetAdminIfEnabled();
 
     app.listen(PORT, () => {
       console.log(
