@@ -15,6 +15,7 @@ function importDatabaseIfEnabled() {
 
     const importScript = path.join(
       __dirname,
+      "..",
       "scripts",
       "import-db.js"
     );
@@ -22,6 +23,7 @@ function importDatabaseIfEnabled() {
     console.log("========================================");
     console.log("Database import mode is ENABLED");
     console.log("Running database import...");
+    console.log(`Import script: ${importScript}`);
     console.log("========================================");
 
     const child = execFile(
@@ -64,6 +66,7 @@ async function start() {
       console.log(
         `Smart Attendance API running on http://localhost:${PORT}`
       );
+
       console.log(
         `Health: http://localhost:${PORT}/health`
       );
