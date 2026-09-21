@@ -2,13 +2,13 @@ const express = require("express");
 
 const router = express.Router();
 
-
 // ============================================================
 // MIDDLEWARE
 // ============================================================
 
-const authMiddleware =
-    require("../middleware/auth");
+const {
+    authenticate
+} = require("../middleware/auth");
 
 const {
     requirePermission
@@ -18,48 +18,38 @@ const {
     uploadCSV
 } = require("../middleware/upload.middleware");
 
-
 // ============================================================
 // ADMIN CONTROLLER
 // ============================================================
 
 const {
-    // USERS
     getUsers,
     createUser,
     updateUser,
     deleteUser,
 
-    // STUDENTS
     getStudents,
     getStudentById,
     createStudent,
     updateStudent,
     deleteStudent,
 
-    // ROLES
     getRoles,
 
-    // COURSES
     getCourses,
     createCourse,
     updateCourse,
     deleteCourse,
 
-    // SECTIONS
     getSections,
 
-    // ROOMS
     getRooms,
 
-    // ENROLLMENTS
     getEnrollments,
 
-    // TIMETABLE
     getTimetable
 
 } = require("../controllers/admin.controller");
-
 
 // ============================================================
 // IMPORT CONTROLLER
@@ -74,7 +64,6 @@ const {
     importTimetable
 
 } = require("../controllers/import.controller");
-
 
 // ============================================================
 // ADMIN TEST
@@ -92,50 +81,37 @@ router.get(
     }
 );
 
-
 // ============================================================
 // USERS
 // ============================================================
 
-// GET ALL USERS
-
 router.get(
     "/users",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getUsers
 );
 
-
-// CREATE USER
-
 router.post(
     "/users",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     createUser
 );
 
-
-// UPDATE USER
-
 router.patch(
     "/users/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     updateUser
 );
 
-
-// DEACTIVATE USER
-
 router.delete(
     "/users/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     deleteUser
 );
-
 
 // ============================================================
 // ROLES
@@ -143,109 +119,81 @@ router.delete(
 
 router.get(
     "/roles",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getRoles
 );
-
 
 // ============================================================
 // STUDENTS
 // ============================================================
 
-// GET ALL STUDENTS
-
 router.get(
     "/students",
-    authMiddleware,
+    authenticate,
     requirePermission("student.view"),
     getStudents
 );
 
-
-// CREATE STUDENT
-
 router.post(
     "/students",
-    authMiddleware,
+    authenticate,
     requirePermission("student.create"),
     createStudent
 );
 
-
-// GET STUDENT BY ID
-
 router.get(
     "/students/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("student.view"),
     getStudentById
 );
 
-
-// UPDATE STUDENT
-
 router.patch(
     "/students/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("student.update"),
     updateStudent
 );
 
-
-// DELETE / DEACTIVATE STUDENT
-
 router.delete(
     "/students/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("student.delete"),
     deleteStudent
 );
-
 
 // ============================================================
 // COURSES
 // ============================================================
 
-// GET COURSES
-
 router.get(
     "/courses",
-    authMiddleware,
+    authenticate,
     requirePermission("course.view"),
     getCourses
 );
 
-
-// CREATE COURSE
-
 router.post(
     "/courses",
-    authMiddleware,
+    authenticate,
     requirePermission("course.create"),
     createCourse
 );
 
-
-// UPDATE COURSE
-
 router.patch(
     "/courses/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("course.update"),
     updateCourse
 );
 
-
-// DELETE COURSE
-
 router.delete(
     "/courses/:id",
-    authMiddleware,
+    authenticate,
     requirePermission("course.delete"),
     deleteCourse
 );
-
 
 // ============================================================
 // IMPORT COURSES
@@ -253,12 +201,11 @@ router.delete(
 
 router.post(
     "/import/courses",
-    authMiddleware,
+    authenticate,
     requirePermission("course.create"),
     uploadCSV.single("file"),
     importCourses
 );
-
 
 // ============================================================
 // IMPORT STUDENTS
@@ -266,12 +213,11 @@ router.post(
 
 router.post(
     "/import/students",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importStudents
 );
-
 
 // ============================================================
 // IMPORT SECTIONS
@@ -279,12 +225,11 @@ router.post(
 
 router.post(
     "/import/sections",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importSections
 );
-
 
 // ============================================================
 // IMPORT ENROLLMENTS
@@ -292,12 +237,11 @@ router.post(
 
 router.post(
     "/import/enrollments",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importEnrollments
 );
-
 
 // ============================================================
 // IMPORT ROOMS
@@ -305,12 +249,11 @@ router.post(
 
 router.post(
     "/import/rooms",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importRooms
 );
-
 
 // ============================================================
 // IMPORT TIMETABLE
@@ -318,12 +261,11 @@ router.post(
 
 router.post(
     "/import/timetable",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importTimetable
 );
-
 
 // ============================================================
 // SECTIONS
@@ -331,11 +273,10 @@ router.post(
 
 router.get(
     "/sections",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getSections
 );
-
 
 // ============================================================
 // ROOMS
@@ -343,11 +284,10 @@ router.get(
 
 router.get(
     "/rooms",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getRooms
 );
-
 
 // ============================================================
 // ENROLLMENTS
@@ -355,11 +295,10 @@ router.get(
 
 router.get(
     "/enrollments",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getEnrollments
 );
-
 
 // ============================================================
 // TIMETABLE
@@ -367,11 +306,10 @@ router.get(
 
 router.get(
     "/timetable",
-    authMiddleware,
+    authenticate,
     requirePermission("user.manage"),
     getTimetable
 );
-
 
 // ============================================================
 // EXPORT
