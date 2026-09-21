@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const db = require("../config/db");
+const { pool } = require("../config/db");
 
 // ============================================================
 // USERS
@@ -25,7 +25,7 @@ const getUsers = (req, res) => {
         ORDER BY u.id DESC
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error("Get users error:", err);
 
@@ -85,7 +85,7 @@ const createUser = async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
-        db.query(
+        pool.query(
             sql,
             [
                 roleId,
@@ -234,7 +234,7 @@ const updateUser = async (req, res) => {
         WHERE id = ?
     `;
 
-    db.query(sql, values, (err, result) => {
+    pool.query(sql, values, (err, result) => {
         if (err) {
             console.error("Update user error:", err);
 
@@ -283,7 +283,7 @@ const deleteUser = (req, res) => {
         WHERE id = ?
     `;
 
-    db.query(sql, [userId], (err, result) => {
+    pool.query(sql, [userId], (err, result) => {
         if (err) {
             console.error("Delete user error:", err);
 
@@ -344,7 +344,7 @@ const getStudents = (req, res) => {
         ORDER BY sp.id DESC
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error("Get students error:", err);
 
@@ -406,7 +406,7 @@ const getStudentById = (req, res) => {
         LIMIT 1
     `;
 
-    db.query(sql, [studentId], (err, results) => {
+    pool.query(sql, [studentId], (err, results) => {
         if (err) {
             console.error("Get student error:", err);
 
@@ -481,7 +481,7 @@ const createStudent = async (req, res) => {
     }
 
     try {
-        const [roles] = await db.promise().query(
+        const [roles] = await pool.query(
             `
                 SELECT id
                 FROM roles
@@ -504,7 +504,7 @@ const createStudent = async (req, res) => {
         );
 
         const connection =
-            await db.promise().getConnection();
+            await pool.getConnection();
 
         try {
             await connection.beginTransaction();
@@ -651,7 +651,7 @@ const updateStudent = async (req, res) => {
     }
 
     try {
-        const [students] = await db.promise().query(
+        const [students] = await pool.query(
             `
                 SELECT
                     sp.user_id
@@ -678,7 +678,7 @@ const updateStudent = async (req, res) => {
         const userId = students[0].user_id;
 
         const connection =
-            await db.promise().getConnection();
+            await pool.getConnection();
 
         try {
             await connection.beginTransaction();
@@ -858,7 +858,7 @@ const deleteStudent = (req, res) => {
             AND r.name = 'student'
     `;
 
-    db.query(sql, [studentId], (err, result) => {
+    pool.query(sql, [studentId], (err, result) => {
         if (err) {
             console.error(
                 "Deactivate student error:",
@@ -901,7 +901,7 @@ const getRoles = (req, res) => {
         ORDER BY id
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error("Get roles error:", err);
 
@@ -935,7 +935,7 @@ const getCourses = (req, res) => {
         ORDER BY course_code
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error(
                 "Get courses error:",
@@ -984,7 +984,7 @@ const createCourse = (req, res) => {
         VALUES (?, ?, ?, ?)
     `;
 
-    db.query(
+    pool.query(
         sql,
         [
             courseCode,
@@ -1079,7 +1079,7 @@ const updateCourse = (req, res) => {
         WHERE id = ?
     `;
 
-    db.query(sql, values, (err, result) => {
+    pool.query(sql, values, (err, result) => {
         if (err) {
             console.error(
                 "Update course error:",
@@ -1126,7 +1126,7 @@ const deleteCourse = (req, res) => {
         });
     }
 
-    db.query(
+    pool.query(
         `
             DELETE FROM courses
             WHERE id = ?
@@ -1235,7 +1235,7 @@ const getSections = (req, res) => {
             s.section_name
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error(
                 "Get sections error:",
@@ -1275,7 +1275,7 @@ const getRooms = (req, res) => {
         ORDER BY building, room_name
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error(
                 "Get rooms error:",
@@ -1345,7 +1345,7 @@ const getEnrollments = (req, res) => {
             e.id DESC
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error(
                 "Get enrollments error:",
@@ -1418,7 +1418,7 @@ const getTimetable = (req, res) => {
             ts.start_time
     `;
 
-    db.query(sql, (err, results) => {
+    pool.query(sql, (err, results) => {
         if (err) {
             console.error(
                 "Get timetable error:",
