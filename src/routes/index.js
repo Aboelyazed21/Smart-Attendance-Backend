@@ -16,6 +16,10 @@ const sessionRoutes = require("./session.routes");
 
 const lecturerRoutes = require("./lecturer.routes");
 
+const lecturerEnrollmentRoutes = require(
+  "./lecturerEnrollment.routes"
+);
+
 const usersRoutes = require("./users.routes");
 
 const coursesRoutes = require("./courses.routes");
@@ -53,6 +57,15 @@ router.use(attendanceRoutes);
 // ============================================================
 
 router.use(lecturerRoutes);
+
+// ============================================================
+// LECTURER ENROLLMENT
+// ============================================================
+
+router.use(
+  "/lecturer/enrollment",
+  lecturerEnrollmentRoutes
+);
 
 // ============================================================
 // SESSIONS
