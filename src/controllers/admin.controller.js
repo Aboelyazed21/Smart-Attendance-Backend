@@ -5,7 +5,7 @@ const { pool } = require("../config/db");
 // USERS
 // ============================================================
 
-const getUsers = (req, res) => {
+const getUsers = async (req, res) => {
     const sql = `
         SELECT
             u.id,
@@ -25,22 +25,21 @@ const getUsers = (req, res) => {
         ORDER BY u.id DESC
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error("Get users error:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not load users"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             users: results
         });
-    });
+    } catch (err) {
+        console.error("Get users error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load users"
+        });
+    }
 };
 
 const createUser = async (req, res) => {
@@ -63,8 +62,7 @@ const createUser = async (req, res) => {
     ) {
         return res.status(400).json({
             success: false,
-            message:
-                "roleId, firstName, lastName, email and password are required"
+            message: "roleId, firstName, lastName, email and password are required"
         });
     }
 
@@ -85,43 +83,30 @@ const createUser = async (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
-        pool.query(
-            sql,
-            [
-                roleId,
-                firstName,
-                lastName,
-                email,
-                passwordHash,
-                phone || null,
-                status
-            ],
-            (err, result) => {
-                if (err) {
-                    console.error("Create user error:", err);
+        const [result] = await pool.query(sql, [
+            roleId,
+            firstName,
+            lastName,
+            email,
+            passwordHash,
+            phone || null,
+            status
+        ]);
 
-                    if (err.code === "ER_DUP_ENTRY") {
-                        return res.status(409).json({
-                            success: false,
-                            message: "Email already exists"
-                        });
-                    }
+        return res.status(201).json({
+            success: true,
+            message: "User created successfully",
+            userId: result.insertId
+        });
+    } catch (err) {
+        console.error("Create user error:", err);
 
-                    return res.status(500).json({
-                        success: false,
-                        message: "Could not create user"
-                    });
-                }
-
-                return res.status(201).json({
-                    success: true,
-                    message: "User created successfully",
-                    userId: result.insertId
-                });
-            }
-        );
-    } catch (error) {
-        console.error("Password hashing error:", error);
+        if (err.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Email already exists"
+            });
+        }
 
         return res.status(500).json({
             success: false,
@@ -179,11 +164,7 @@ const updateUser = async (req, res) => {
     }
 
     if (status !== undefined) {
-        const validStatuses = [
-            "active",
-            "inactive",
-            "suspended"
-        ];
+        const validStatuses = ["active", "inactive", "suspended"];
 
         if (!validStatuses.includes(status)) {
             return res.status(400).json({
@@ -198,19 +179,11 @@ const updateUser = async (req, res) => {
 
     if (password) {
         try {
-            const passwordHash = await bcrypt.hash(
-                password,
-                10
-            );
-
+            const passwordHash = await bcrypt.hash(password, 10);
             fields.push("password_hash = ?");
             values.push(passwordHash);
         } catch (error) {
-            console.error(
-                "Password hashing error:",
-                error
-            );
-
+            console.error("Password hashing error:", error);
             return res.status(500).json({
                 success: false,
                 message: "Could not update password"
@@ -234,22 +207,8 @@ const updateUser = async (req, res) => {
         WHERE id = ?
     `;
 
-    pool.query(sql, values, (err, result) => {
-        if (err) {
-            console.error("Update user error:", err);
-
-            if (err.code === "ER_DUP_ENTRY") {
-                return res.status(409).json({
-                    success: false,
-                    message: "Email already exists"
-                });
-            }
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not update user"
-            });
-        }
+    try {
+        const [result] = await pool.query(sql, values);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({
@@ -262,10 +221,24 @@ const updateUser = async (req, res) => {
             success: true,
             message: "User updated successfully"
         });
-    });
+    } catch (err) {
+        console.error("Update user error:", err);
+
+        if (err.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Email already exists"
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Could not update user"
+        });
+    }
 };
 
-const deleteUser = (req, res) => {
+const deleteUser = async (req, res) => {
     const userId = Number(req.params.id);
 
     if (!userId) {
@@ -283,15 +256,8 @@ const deleteUser = (req, res) => {
         WHERE id = ?
     `;
 
-    pool.query(sql, [userId], (err, result) => {
-        if (err) {
-            console.error("Delete user error:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not deactivate user"
-            });
-        }
+    try {
+        const [result] = await pool.query(sql, [userId]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({
@@ -304,14 +270,20 @@ const deleteUser = (req, res) => {
             success: true,
             message: "User deactivated successfully"
         });
-    });
+    } catch (err) {
+        console.error("Delete user error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not deactivate user"
+        });
+    }
 };
 
 // ============================================================
 // STUDENTS
 // ============================================================
 
-const getStudents = (req, res) => {
+const getStudents = async (req, res) => {
     const sql = `
         SELECT
             sp.id AS student_id,
@@ -321,7 +293,6 @@ const getStudents = (req, res) => {
             sp.department,
             sp.level,
             sp.academic_year,
-
             u.first_name,
             u.last_name,
             u.email,
@@ -330,39 +301,33 @@ const getStudents = (req, res) => {
             u.last_login_at,
             u.created_at,
             u.updated_at
-
         FROM student_profiles sp
-
         INNER JOIN users u
             ON u.id = sp.user_id
-
         INNER JOIN roles r
             ON r.id = u.role_id
-
         WHERE r.name = 'student'
-
         ORDER BY sp.id DESC
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error("Get students error:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not load students"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             students: results
         });
-    });
+    } catch (err) {
+        console.error("Get students error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load students"
+        });
+    }
 };
 
-const getStudentById = (req, res) => {
+const getStudentById = async (req, res) => {
     const studentId = Number(req.params.id);
 
     if (!studentId) {
@@ -381,7 +346,6 @@ const getStudentById = (req, res) => {
             sp.department,
             sp.level,
             sp.academic_year,
-
             u.first_name,
             u.last_name,
             u.email,
@@ -390,31 +354,19 @@ const getStudentById = (req, res) => {
             u.last_login_at,
             u.created_at,
             u.updated_at
-
         FROM student_profiles sp
-
         INNER JOIN users u
             ON u.id = sp.user_id
-
         INNER JOIN roles r
             ON r.id = u.role_id
-
         WHERE
             sp.id = ?
             AND r.name = 'student'
-
         LIMIT 1
     `;
 
-    pool.query(sql, [studentId], (err, results) => {
-        if (err) {
-            console.error("Get student error:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not load student"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql, [studentId]);
 
         if (results.length === 0) {
             return res.status(404).json({
@@ -427,7 +379,13 @@ const getStudentById = (req, res) => {
             success: true,
             student: results[0]
         });
-    });
+    } catch (err) {
+        console.error("Get student error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load student"
+        });
+    }
 };
 
 const createStudent = async (req, res) => {
@@ -454,24 +412,18 @@ const createStudent = async (req, res) => {
     ) {
         return res.status(400).json({
             success: false,
-            message:
-                "firstName, lastName, email, password and studentCode are required"
+            message: "firstName, lastName, email, password and studentCode are required"
         });
     }
 
     if (password.length < 6) {
         return res.status(400).json({
             success: false,
-            message:
-                "Password must be at least 6 characters"
+            message: "Password must be at least 6 characters"
         });
     }
 
-    const validStatuses = [
-        "active",
-        "inactive",
-        "suspended"
-    ];
+    const validStatuses = ["active", "inactive", "suspended"];
 
     if (!validStatuses.includes(status)) {
         return res.status(400).json({
@@ -480,8 +432,10 @@ const createStudent = async (req, res) => {
         });
     }
 
+    const connection = await pool.getConnection();
+
     try {
-        const [roles] = await pool.query(
+        const [roles] = await connection.query(
             `
                 SELECT id
                 FROM roles
@@ -491,6 +445,7 @@ const createStudent = async (req, res) => {
         );
 
         if (roles.length === 0) {
+            connection.release();
             return res.status(500).json({
                 success: false,
                 message: "Student role does not exist"
@@ -498,110 +453,81 @@ const createStudent = async (req, res) => {
         }
 
         const roleId = roles[0].id;
-        const passwordHash = await bcrypt.hash(
-            password,
-            10
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        await connection.beginTransaction();
+
+        const [userResult] = await connection.query(
+            `
+                INSERT INTO users
+                (
+                    role_id,
+                    first_name,
+                    last_name,
+                    email,
+                    password_hash,
+                    phone,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+                roleId,
+                firstName,
+                lastName,
+                email,
+                passwordHash,
+                phone || null,
+                status
+            ]
         );
 
-        const connection =
-            await pool.getConnection();
+        const userId = userResult.insertId;
 
-        try {
-            await connection.beginTransaction();
+        const [studentResult] = await connection.query(
+            `
+                INSERT INTO student_profiles
+                (
+                    user_id,
+                    student_code,
+                    university_id,
+                    department,
+                    level,
+                    academic_year
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+            `,
+            [
+                userId,
+                studentCode,
+                universityId || null,
+                department || null,
+                level !== undefined ? Number(level) : null,
+                academicYear || null
+            ]
+        );
 
-            const [userResult] =
-                await connection.query(
-                    `
-                        INSERT INTO users
-                        (
-                            role_id,
-                            first_name,
-                            last_name,
-                            email,
-                            password_hash,
-                            phone,
-                            status
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    `,
-                    [
-                        roleId,
-                        firstName,
-                        lastName,
-                        email,
-                        passwordHash,
-                        phone || null,
-                        status
-                    ]
-                );
+        await connection.commit();
+        connection.release();
 
-            const userId = userResult.insertId;
-
-            const [studentResult] =
-                await connection.query(
-                    `
-                        INSERT INTO student_profiles
-                        (
-                            user_id,
-                            student_code,
-                            university_id,
-                            department,
-                            level,
-                            academic_year
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    `,
-                    [
-                        userId,
-                        studentCode,
-                        universityId || null,
-                        department || null,
-                        level !== undefined
-                            ? Number(level)
-                            : null,
-                        academicYear || null
-                    ]
-                );
-
-            await connection.commit();
-
-            return res.status(201).json({
-                success: true,
-                message:
-                    "Student created successfully",
-                studentId:
-                    studentResult.insertId,
-                userId
-            });
-        } catch (error) {
-            await connection.rollback();
-
-            console.error(
-                "Create student transaction error:",
-                error
-            );
-
-            if (error.code === "ER_DUP_ENTRY") {
-                return res.status(409).json({
-                    success: false,
-                    message:
-                        "Email or student code already exists"
-                });
-            }
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not create student"
-            });
-        } finally {
-            connection.release();
-        }
+        return res.status(201).json({
+            success: true,
+            message: "Student created successfully",
+            studentId: studentResult.insertId,
+            userId
+        });
     } catch (error) {
-        console.error(
-            "Create student error:",
-            error
-        );
+        await connection.rollback();
+        connection.release();
+
+        console.error("Create student transaction error:", error);
+
+        if (error.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Email or student code already exists"
+            });
+        }
 
         return res.status(500).json({
             success: false,
@@ -634,41 +560,32 @@ const updateStudent = async (req, res) => {
         academicYear
     } = req.body;
 
-    const validStatuses = [
-        "active",
-        "inactive",
-        "suspended"
-    ];
+    const validStatuses = ["active", "inactive", "suspended"];
 
-    if (
-        status !== undefined &&
-        !validStatuses.includes(status)
-    ) {
+    if (status !== undefined && !validStatuses.includes(status)) {
         return res.status(400).json({
             success: false,
             message: "Invalid student status"
         });
     }
 
+    const connection = await pool.getConnection();
+
     try {
-        const [students] = await pool.query(
+        const [students] = await connection.query(
             `
-                SELECT
-                    sp.user_id
+                SELECT sp.user_id
                 FROM student_profiles sp
-                INNER JOIN users u
-                    ON u.id = sp.user_id
-                INNER JOIN roles r
-                    ON r.id = u.role_id
-                WHERE
-                    sp.id = ?
-                    AND r.name = 'student'
+                INNER JOIN users u ON u.id = sp.user_id
+                INNER JOIN roles r ON r.id = u.role_id
+                WHERE sp.id = ? AND r.name = 'student'
                 LIMIT 1
             `,
             [studentId]
         );
 
         if (students.length === 0) {
+            connection.release();
             return res.status(404).json({
                 success: false,
                 message: "Student not found"
@@ -677,164 +594,125 @@ const updateStudent = async (req, res) => {
 
         const userId = students[0].user_id;
 
-        const connection =
-            await pool.getConnection();
+        await connection.beginTransaction();
 
-        try {
-            await connection.beginTransaction();
+        const userFields = [];
+        const userValues = [];
 
-            const userFields = [];
-            const userValues = [];
-
-            if (firstName !== undefined) {
-                userFields.push("first_name = ?");
-                userValues.push(firstName);
-            }
-
-            if (lastName !== undefined) {
-                userFields.push("last_name = ?");
-                userValues.push(lastName);
-            }
-
-            if (email !== undefined) {
-                userFields.push("email = ?");
-                userValues.push(email);
-            }
-
-            if (phone !== undefined) {
-                userFields.push("phone = ?");
-                userValues.push(phone);
-            }
-
-            if (status !== undefined) {
-                userFields.push("status = ?");
-                userValues.push(status);
-            }
-
-            if (password) {
-                const passwordHash =
-                    await bcrypt.hash(password, 10);
-
-                userFields.push(
-                    "password_hash = ?"
-                );
-
-                userValues.push(passwordHash);
-            }
-
-            if (userFields.length > 0) {
-                userFields.push("updated_at = NOW()");
-                userValues.push(userId);
-
-                await connection.query(
-                    `
-                        UPDATE users
-                        SET ${userFields.join(", ")}
-                        WHERE id = ?
-                    `,
-                    userValues
-                );
-            }
-
-            const profileFields = [];
-            const profileValues = [];
-
-            if (studentCode !== undefined) {
-                profileFields.push(
-                    "student_code = ?"
-                );
-                profileValues.push(studentCode);
-            }
-
-            if (universityId !== undefined) {
-                profileFields.push(
-                    "university_id = ?"
-                );
-                profileValues.push(universityId);
-            }
-
-            if (department !== undefined) {
-                profileFields.push(
-                    "department = ?"
-                );
-                profileValues.push(department);
-            }
-
-            if (level !== undefined) {
-                profileFields.push("level = ?");
-                profileValues.push(
-                    level === null
-                        ? null
-                        : Number(level)
-                );
-            }
-
-            if (academicYear !== undefined) {
-                profileFields.push(
-                    "academic_year = ?"
-                );
-                profileValues.push(academicYear);
-            }
-
-            if (profileFields.length > 0) {
-                profileValues.push(studentId);
-
-                await connection.query(
-                    `
-                        UPDATE student_profiles
-                        SET ${profileFields.join(", ")}
-                        WHERE id = ?
-                    `,
-                    profileValues
-                );
-            }
-
-            await connection.commit();
-
-            return res.json({
-                success: true,
-                message:
-                    "Student updated successfully"
-            });
-        } catch (error) {
-            await connection.rollback();
-
-            console.error(
-                "Update student error:",
-                error
-            );
-
-            if (error.code === "ER_DUP_ENTRY") {
-                return res.status(409).json({
-                    success: false,
-                    message:
-                        "Email or student code already exists"
-                });
-            }
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not update student"
-            });
-        } finally {
-            connection.release();
+        if (firstName !== undefined) {
+            userFields.push("first_name = ?");
+            userValues.push(firstName);
         }
+
+        if (lastName !== undefined) {
+            userFields.push("last_name = ?");
+            userValues.push(lastName);
+        }
+
+        if (email !== undefined) {
+            userFields.push("email = ?");
+            userValues.push(email);
+        }
+
+        if (phone !== undefined) {
+            userFields.push("phone = ?");
+            userValues.push(phone);
+        }
+
+        if (status !== undefined) {
+            userFields.push("status = ?");
+            userValues.push(status);
+        }
+
+        if (password) {
+            const passwordHash = await bcrypt.hash(password, 10);
+            userFields.push("password_hash = ?");
+            userValues.push(passwordHash);
+        }
+
+        if (userFields.length > 0) {
+            userFields.push("updated_at = NOW()");
+            userValues.push(userId);
+
+            await connection.query(
+                `
+                    UPDATE users
+                    SET ${userFields.join(", ")}
+                    WHERE id = ?
+                `,
+                userValues
+            );
+        }
+
+        const profileFields = [];
+        const profileValues = [];
+
+        if (studentCode !== undefined) {
+            profileFields.push("student_code = ?");
+            profileValues.push(studentCode);
+        }
+
+        if (universityId !== undefined) {
+            profileFields.push("university_id = ?");
+            profileValues.push(universityId);
+        }
+
+        if (department !== undefined) {
+            profileFields.push("department = ?");
+            profileValues.push(department);
+        }
+
+        if (level !== undefined) {
+            profileFields.push("level = ?");
+            profileValues.push(level === null ? null : Number(level));
+        }
+
+        if (academicYear !== undefined) {
+            profileFields.push("academic_year = ?");
+            profileValues.push(academicYear);
+        }
+
+        if (profileFields.length > 0) {
+            profileValues.push(studentId);
+
+            await connection.query(
+                `
+                    UPDATE student_profiles
+                    SET ${profileFields.join(", ")}
+                    WHERE id = ?
+                `,
+                profileValues
+            );
+        }
+
+        await connection.commit();
+        connection.release();
+
+        return res.json({
+            success: true,
+            message: "Student updated successfully"
+        });
     } catch (error) {
-        console.error(
-            "Update student error:",
-            error
-        );
+        await connection.rollback();
+        connection.release();
+
+        console.error("Update student error:", error);
+
+        if (error.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Email or student code already exists"
+            });
+        }
 
         return res.status(500).json({
             success: false,
-            message:
-                "Could not update student"
+            message: "Could not update student"
         });
     }
 };
 
-const deleteStudent = (req, res) => {
+const deleteStudent = async (req, res) => {
     const studentId = Number(req.params.id);
 
     if (!studentId) {
@@ -858,19 +736,8 @@ const deleteStudent = (req, res) => {
             AND r.name = 'student'
     `;
 
-    pool.query(sql, [studentId], (err, result) => {
-        if (err) {
-            console.error(
-                "Deactivate student error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not deactivate student"
-            });
-        }
+    try {
+        const [result] = await pool.query(sql, [studentId]);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({
@@ -881,17 +748,22 @@ const deleteStudent = (req, res) => {
 
         return res.json({
             success: true,
-            message:
-                "Student deactivated successfully"
+            message: "Student deactivated successfully"
         });
-    });
+    } catch (err) {
+        console.error("Deactivate student error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not deactivate student"
+        });
+    }
 };
 
 // ============================================================
 // ROLES
 // ============================================================
 
-const getRoles = (req, res) => {
+const getRoles = async (req, res) => {
     const sql = `
         SELECT
             id,
@@ -901,28 +773,27 @@ const getRoles = (req, res) => {
         ORDER BY id
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error("Get roles error:", err);
-
-            return res.status(500).json({
-                success: false,
-                message: "Could not load roles"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             roles: results
         });
-    });
+    } catch (err) {
+        console.error("Get roles error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load roles"
+        });
+    }
 };
 
 // ============================================================
 // COURSES
 // ============================================================
 
-const getCourses = (req, res) => {
+const getCourses = async (req, res) => {
     const sql = `
         SELECT
             id,
@@ -935,29 +806,24 @@ const getCourses = (req, res) => {
         ORDER BY course_code
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error(
-                "Get courses error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not load courses"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             courses: results
         });
-    });
+    } catch (err) {
+        console.error("Get courses error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load courses"
+        });
+    }
 };
 
-const createCourse = (req, res) => {
+const createCourse = async (req, res) => {
     const {
         courseCode,
         courseName,
@@ -968,8 +834,7 @@ const createCourse = (req, res) => {
     if (!courseCode || !courseName) {
         return res.status(400).json({
             success: false,
-            message:
-                "courseCode and courseName are required"
+            message: "courseCode and courseName are required"
         });
     }
 
@@ -984,47 +849,37 @@ const createCourse = (req, res) => {
         VALUES (?, ?, ?, ?)
     `;
 
-    pool.query(
-        sql,
-        [
+    try {
+        const [result] = await pool.query(sql, [
             courseCode,
             courseName,
             description || null,
             creditHours || null
-        ],
-        (err, result) => {
-            if (err) {
-                console.error(
-                    "Create course error:",
-                    err
-                );
+        ]);
 
-                if (err.code === "ER_DUP_ENTRY") {
-                    return res.status(409).json({
-                        success: false,
-                        message:
-                            "Course code already exists"
-                    });
-                }
+        return res.status(201).json({
+            success: true,
+            message: "Course created successfully",
+            courseId: result.insertId
+        });
+    } catch (err) {
+        console.error("Create course error:", err);
 
-                return res.status(500).json({
-                    success: false,
-                    message:
-                        "Could not create course"
-                });
-            }
-
-            return res.status(201).json({
-                success: true,
-                message:
-                    "Course created successfully",
-                courseId: result.insertId
+        if (err.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Course code already exists"
             });
         }
-    );
+
+        return res.status(500).json({
+            success: false,
+            message: "Could not create course"
+        });
+    }
 };
 
-const updateCourse = (req, res) => {
+const updateCourse = async (req, res) => {
     const courseId = Number(req.params.id);
 
     if (!courseId) {
@@ -1079,27 +934,8 @@ const updateCourse = (req, res) => {
         WHERE id = ?
     `;
 
-    pool.query(sql, values, (err, result) => {
-        if (err) {
-            console.error(
-                "Update course error:",
-                err
-            );
-
-            if (err.code === "ER_DUP_ENTRY") {
-                return res.status(409).json({
-                    success: false,
-                    message:
-                        "Course code already exists"
-                });
-            }
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not update course"
-            });
-        }
+    try {
+        const [result] = await pool.query(sql, values);
 
         if (result.affectedRows === 0) {
             return res.status(404).json({
@@ -1110,13 +946,26 @@ const updateCourse = (req, res) => {
 
         return res.json({
             success: true,
-            message:
-                "Course updated successfully"
+            message: "Course updated successfully"
         });
-    });
+    } catch (err) {
+        console.error("Update course error:", err);
+
+        if (err.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                message: "Course code already exists"
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Could not update course"
+        });
+    }
 };
 
-const deleteCourse = (req, res) => {
+const deleteCourse = async (req, res) => {
     const courseId = Number(req.params.id);
 
     if (!courseId) {
@@ -1126,59 +975,48 @@ const deleteCourse = (req, res) => {
         });
     }
 
-    pool.query(
-        `
-            DELETE FROM courses
-            WHERE id = ?
-        `,
-        [courseId],
-        (err, result) => {
-            if (err) {
-                console.error(
-                    "Delete course error:",
-                    err
-                );
+    try {
+        const [result] = await pool.query(
+            `
+                DELETE FROM courses
+                WHERE id = ?
+            `,
+            [courseId]
+        );
 
-                if (
-                    err.code ===
-                    "ER_ROW_IS_REFERENCED_2"
-                ) {
-                    return res.status(409).json({
-                        success: false,
-                        message:
-                            "Course cannot be deleted because it is referenced by sections or other records"
-                    });
-                }
-
-                return res.status(500).json({
-                    success: false,
-                    message:
-                        "Could not delete course"
-                });
-            }
-
-            if (result.affectedRows === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message:
-                        "Course not found"
-                });
-            }
-
-            return res.json({
-                success: true,
-                message:
-                    "Course deleted successfully"
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Course not found"
             });
         }
-    );
+
+        return res.json({
+            success: true,
+            message: "Course deleted successfully"
+        });
+    } catch (err) {
+        console.error("Delete course error:", err);
+
+        if (err.code === "ER_ROW_IS_REFERENCED_2") {
+            return res.status(409).json({
+                success: false,
+                message: "Course cannot be deleted because it is referenced by sections or other records"
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            message: "Could not delete course"
+        });
+    }
 };
 
 // ============================================================
 // SECTIONS
 // ============================================================
 
-const getSections = (req, res) => {
+const getSections = async (req, res) => {
     const sql = `
         SELECT
             s.id AS section_id,
@@ -1186,37 +1024,24 @@ const getSections = (req, res) => {
             s.academic_year,
             s.semester,
             s.capacity,
-
             c.id AS course_id,
             c.course_code,
             c.course_name,
-
             s.lecturer_id,
-
-            CONCAT(
-                u.first_name,
-                ' ',
-                u.last_name
-            ) AS lecturer_name,
-
+            CONCAT(u.first_name, ' ', u.last_name) AS lecturer_name,
             COUNT(
                 DISTINCT CASE
                     WHEN e.status = 'active'
                     THEN e.id
                 END
             ) AS enrolled_students
-
         FROM sections s
-
         INNER JOIN courses c
             ON c.id = s.course_id
-
         LEFT JOIN users u
             ON u.id = s.lecturer_id
-
         LEFT JOIN enrollments e
             ON e.section_id = s.id
-
         GROUP BY
             s.id,
             s.section_name,
@@ -1229,39 +1054,33 @@ const getSections = (req, res) => {
             s.lecturer_id,
             u.first_name,
             u.last_name
-
         ORDER BY
             c.course_code,
             s.section_name
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error(
-                "Get sections error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not load sections"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             sections: results
         });
-    });
+    } catch (err) {
+        console.error("Get sections error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load sections"
+        });
+    }
 };
 
 // ============================================================
 // ROOMS
 // ============================================================
 
-const getRooms = (req, res) => {
+const getRooms = async (req, res) => {
     const sql = `
         SELECT
             id,
@@ -1275,135 +1094,101 @@ const getRooms = (req, res) => {
         ORDER BY building, room_name
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error(
-                "Get rooms error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not load rooms"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             rooms: results
         });
-    });
+    } catch (err) {
+        console.error("Get rooms error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load rooms"
+        });
+    }
 };
 
 // ============================================================
 // ENROLLMENTS
 // ============================================================
 
-const getEnrollments = (req, res) => {
+const getEnrollments = async (req, res) => {
     const sql = `
         SELECT
             e.id AS enrollment_id,
             e.status,
             e.enrolled_at,
-
             sp.id AS student_id,
             sp.student_code,
             sp.university_id,
-
-            CONCAT(
-                u.first_name,
-                ' ',
-                u.last_name
-            ) AS student_name,
-
+            CONCAT(u.first_name, ' ', u.last_name) AS student_name,
             u.email AS student_email,
-
             s.id AS section_id,
             s.section_name,
-
             c.id AS course_id,
             c.course_code,
             c.course_name
-
         FROM enrollments e
-
         INNER JOIN student_profiles sp
             ON sp.id = e.student_id
-
         INNER JOIN users u
             ON u.id = sp.user_id
-
         INNER JOIN sections s
             ON s.id = e.section_id
-
         INNER JOIN courses c
             ON c.id = s.course_id
-
         ORDER BY
             e.id DESC
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error(
-                "Get enrollments error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not load enrollments"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             enrollments: results
         });
-    });
+    } catch (err) {
+        console.error("Get enrollments error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load enrollments"
+        });
+    }
 };
 
 // ============================================================
 // TIMETABLE
 // ============================================================
 
-const getTimetable = (req, res) => {
+const getTimetable = async (req, res) => {
     const sql = `
         SELECT
             ts.id AS timetable_id,
-
             ts.section_id,
             s.section_name,
-
             c.id AS course_id,
             c.course_code,
             c.course_name,
-
             ts.room_id,
             r.building,
             r.room_name,
-
             ts.day_of_week,
             ts.start_time,
             ts.end_time,
             ts.start_date,
             ts.end_date
-
         FROM timetable_slots ts
-
         INNER JOIN sections s
             ON s.id = ts.section_id
-
         INNER JOIN courses c
             ON c.id = s.course_id
-
         LEFT JOIN rooms r
             ON r.id = ts.room_id
-
         ORDER BY
             FIELD(
                 ts.day_of_week,
@@ -1418,26 +1203,21 @@ const getTimetable = (req, res) => {
             ts.start_time
     `;
 
-    pool.query(sql, (err, results) => {
-        if (err) {
-            console.error(
-                "Get timetable error:",
-                err
-            );
-
-            return res.status(500).json({
-                success: false,
-                message:
-                    "Could not load timetable"
-            });
-        }
+    try {
+        const [results] = await pool.query(sql);
 
         return res.json({
             success: true,
             count: results.length,
             timetable: results
         });
-    });
+    } catch (err) {
+        console.error("Get timetable error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Could not load timetable"
+        });
+    }
 };
 
 // ============================================================
@@ -1445,37 +1225,29 @@ const getTimetable = (req, res) => {
 // ============================================================
 
 module.exports = {
-    // USERS
     getUsers,
     createUser,
     updateUser,
     deleteUser,
 
-    // STUDENTS
     getStudents,
     getStudentById,
     createStudent,
     updateStudent,
     deleteStudent,
 
-    // ROLES
     getRoles,
 
-    // COURSES
     getCourses,
     createCourse,
     updateCourse,
     deleteCourse,
 
-    // SECTIONS
     getSections,
 
-    // ROOMS
     getRooms,
 
-    // ENROLLMENTS
     getEnrollments,
 
-    // TIMETABLE
     getTimetable
 };
