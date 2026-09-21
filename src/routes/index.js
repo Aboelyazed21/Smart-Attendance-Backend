@@ -28,6 +28,8 @@ const timetableRoutes = require("./timetable.routes");
 
 const studentRoutes = require("./student.routes");
 
+const adminRoutes = require("./admin.routes");
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -113,6 +115,15 @@ router.use(
 router.use(
   "/students",
   studentRoutes
+);
+
+// ============================================================
+// ADMIN
+// ============================================================
+
+router.use(
+  "/admin",
+  adminRoutes
 );
 
 // ============================================================
