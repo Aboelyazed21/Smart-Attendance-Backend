@@ -69,6 +69,39 @@ async function getSessionForUser(sessionId, req) {
 }
 
 // ============================================================
+// GET SESSION BY ID
+// ============================================================
+
+async function getById(req, res) {
+  try {
+    const sessionId = req.params.id;
+
+    const session = await getSessionForUser(
+      sessionId,
+      req
+    );
+
+    if (!session) {
+      return res.status(404).json({
+        message: "Session not found",
+      });
+    }
+
+    return res.json(session);
+  } catch (error) {
+    console.error("Get session error:", error);
+
+    return res.status(500).json({
+      message: "Failed to load attendance session",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
+    });
+  }
+}
+
+// ============================================================
 // LIST SESSIONS
 // ============================================================
 
@@ -658,6 +691,7 @@ async function roster(req, res) {
 module.exports = {
   list,
   mySessions,
+  getById,
   create,
   open,
   refreshQr,

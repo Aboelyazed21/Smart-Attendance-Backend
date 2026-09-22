@@ -10,6 +10,7 @@ const {
 
 const {
   list,
+  getById,
   create,
   open,
   refreshQr,
@@ -27,6 +28,18 @@ router.get(
   authenticate,
   requirePermission("session.view"),
   list
+);
+
+/* =========================================================
+   GET ATTENDANCE SESSION BY ID
+   GET /api/sessions/:id
+========================================================= */
+
+router.get(
+  "/:id",
+  authenticate,
+  requirePermission("session.view"),
+  getById
 );
 
 /* =========================================================
