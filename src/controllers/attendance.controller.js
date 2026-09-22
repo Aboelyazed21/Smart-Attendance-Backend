@@ -185,12 +185,12 @@ async function scan(req, res) {
     if (session.scheduled_start) {
       const [timeRows] = await pool.query(
         `
-          SELECT TIME(NOW()) AS current_time
+          SELECT TIME(NOW()) AS current_time_value
         `
       );
 
       const currentTime =
-        timeRows[0].current_time;
+        timeRows[0].current_time_value;
 
       const currentMinutes =
         toMinutes(currentTime);
