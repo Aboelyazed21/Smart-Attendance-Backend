@@ -7,15 +7,15 @@ const router = express.Router();
 // ==========================================
 
 const {
-  authenticate
+  authenticate,
 } = require("../middleware/auth");
 
 const {
-  requireStudentForScan
+  requireStudentForScan,
 } = require("../middleware/attendanceScan.middleware");
 
 const {
-  qrScanRateLimit
+  qrScanRateLimit,
 } = require("../middleware/qrRateLimit.middleware");
 
 // ==========================================
@@ -63,6 +63,9 @@ router.get(
 // ==========================================
 // MANUAL UPDATE
 // PUT /api/attendance/:id
+//
+// Used by lecturer to update an existing
+// attendance record.
 // ==========================================
 
 router.put(

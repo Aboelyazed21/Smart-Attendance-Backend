@@ -477,26 +477,103 @@ async function myAttendance(req, res) {
 
 async function manualUpdate(req, res) {
   try {
-    const {
-      status,
-      notes,
-    } = req.body;
+    // ----------------------------------------------------------
+    // 1. Validate authenticated user
+    // ----------------------------------------------------------
 
-    if (
-      ![
-        "present",
-        "absent",
-        "late",
-        "excused",
-      ].includes(status)
-    ) {
-      return res.status(400).json({
-        message:
-          "Invalid attendance status",
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        message: "Authentication is required",
       });
     }
 
-    const [result] = await pool.query(
+    // ----------------------------------------------------------
+    // 2. Get attendance record ID
+    // ----------------------------------------------------------
+
+    const attendanceId = Number(req.params.id);
+
+    if (
+      !Number.isInteger(attendanceId) ||
+      attendanceId <= 0
+    ) {
+      return res.status(400).json({
+        message: "Invalid attendance record ID",
+      });
+    }
+
+    // ----------------------------------------------------------
+    // 3. Read request body
+    // ----------------------------------------------------------
+
+    const status =
+      typeof req.body?.status === "string"
+        ? req.body.status.trim().toLowerCase()
+        : "";
+
+    const notes =
+      typeof req.body?.notes === "string"
+        ? req.body.notes.trim()
+        : null;
+
+    // ----------------------------------------------------------
+    // 4. Validate attendance status
+    // ----------------------------------------------------------
+
+    const allowedStatuses = [
+      "present",
+      "absent",
+      "late",
+      "excused",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        message: "Invalid attendance status",
+        allowedStatuses,
+      });
+    }
+
+    // ----------------------------------------------------------
+    // 5. Make sure attendance record exists
+    //
+    // IMPORTANT:
+    // Do NOT depend on UPDATE affectedRows to determine
+    // whether the record exists.
+    // ----------------------------------------------------------
+
+    const [existingRows] = await pool.query(
+      `
+        SELECT
+          id,
+          student_id,
+          session_id,
+          status,
+          source,
+          notes,
+          scanned_at,
+          validation_status,
+          qr_version
+        FROM attendance_events
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [attendanceId]
+    );
+
+    if (!existingRows.length) {
+      return res.status(404).json({
+        message: "Attendance record not found",
+      });
+    }
+
+    const existingAttendance = existingRows[0];
+
+    // ----------------------------------------------------------
+    // 6. Update attendance
+    // ----------------------------------------------------------
+
+    await pool.query(
       `
         UPDATE attendance_events
         SET
@@ -508,19 +585,49 @@ async function manualUpdate(req, res) {
       [
         status,
         notes || null,
-        req.params.id,
+        attendanceId,
       ]
     );
 
-    if (!result.affectedRows) {
+    // ----------------------------------------------------------
+    // 7. Read the updated record
+    // ----------------------------------------------------------
+
+    const [updatedRows] = await pool.query(
+      `
+        SELECT
+          id,
+          student_id,
+          session_id,
+          status,
+          source,
+          notes,
+          scanned_at,
+          validation_status,
+          qr_version
+        FROM attendance_events
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [attendanceId]
+    );
+
+    if (!updatedRows.length) {
       return res.status(404).json({
         message:
-          "Attendance record not found",
+          "Attendance record not found after update",
       });
     }
 
+    // ----------------------------------------------------------
+    // 8. Return success
+    // ----------------------------------------------------------
+
     return res.json({
-      message: "Attendance updated",
+      message: "Attendance updated successfully",
+      attendance: updatedRows[0],
+      previousStatus: existingAttendance.status,
+      previousNotes: existingAttendance.notes,
     });
   } catch (error) {
     console.error(
@@ -529,8 +636,11 @@ async function manualUpdate(req, res) {
     );
 
     return res.status(500).json({
-      message:
-        "Failed to update attendance",
+      message: "Failed to update attendance",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
     });
   }
 }
