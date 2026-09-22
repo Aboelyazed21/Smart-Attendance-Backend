@@ -34,6 +34,8 @@ const studentRoutes = require("./student.routes");
 
 const adminRoutes = require("./admin.routes");
 
+const correctionRoutes = require("./correction.routes");
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -137,6 +139,14 @@ router.use(
 router.use(
   "/admin",
   adminRoutes
+);
+
+// ============================================================
+// ATTENDANCE CORRECTIONS
+// ============================================================
+
+router.use(
+  correctionRoutes
 );
 
 // ============================================================
