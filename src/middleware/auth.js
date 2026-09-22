@@ -53,12 +53,23 @@ async function authenticate(req, res, next) {
     // ========================================================
     // Attach authenticated user
     // ========================================================
+    //
+    // IMPORTANT:
+    // The JWT uses "id", while some older controllers
+    // use "userId".
+    //
+    // We provide BOTH so all existing controllers
+    // continue working without changing their logic.
+    // ========================================================
 
     req.user = {
       ...decoded,
 
-      // Keep compatibility with controllers
-      // that use req.user.userId
+      // Current JWT field
+      id: decoded.id,
+
+      // Backward-compatible field used by
+      // attendance.controller.js and other controllers
       userId: decoded.id,
 
       permissions,
