@@ -56,6 +56,11 @@ async function authenticate(req, res, next) {
 
     req.user = {
       ...decoded,
+
+      // Keep compatibility with controllers
+      // that use req.user.userId
+      userId: decoded.id,
+
       permissions,
     };
 
