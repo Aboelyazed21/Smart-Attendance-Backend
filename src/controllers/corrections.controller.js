@@ -93,10 +93,23 @@ async function myRequests(req, res) {
   const [rows] = await pool.query(
     `
       SELECT
-        cr.*
+        cr.*,
+        ae.status AS attendance_status,
+        c.course_code,
+        c.course_name,
+        sec.section_name,
+        ses.session_date
       FROM correction_requests cr
       JOIN student_profiles sp
         ON sp.id = cr.student_id
+      LEFT JOIN attendance_events ae
+        ON ae.id = cr.attendance_event_id
+      LEFT JOIN attendance_sessions ses
+        ON ses.id = ae.session_id
+      LEFT JOIN sections sec
+        ON sec.id = ses.section_id
+      LEFT JOIN courses c
+        ON c.id = sec.course_id
       WHERE sp.user_id = ?
       ORDER BY cr.id DESC
     `,

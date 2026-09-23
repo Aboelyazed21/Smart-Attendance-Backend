@@ -11,6 +11,7 @@ const {
 const {
   list,
   getById,
+  mySessions,
   create,
   open,
   refreshQr,
@@ -28,6 +29,20 @@ router.get(
   authenticate,
   requirePermission("session.view"),
   list
+);
+
+/* =========================================================
+   MY SESSIONS - STUDENT
+   GET /api/sessions/my
+
+   NOTE: registered BEFORE "/:id" so "my" is not treated
+   as a session id.
+========================================================= */
+
+router.get(
+  "/my",
+  authenticate,
+  mySessions
 );
 
 /* =========================================================
