@@ -288,7 +288,7 @@ async function updateAttendance(req, res) {
   }
 
   // ----------------------------------------------------------
-  // Check session + lecturer ownership
+  // Check session
   // ----------------------------------------------------------
 
   const [sessionRows] = await pool.query(
@@ -313,14 +313,33 @@ async function updateAttendance(req, res) {
 
   const session = sessionRows[0];
 
-  // The lecturer must own the session.
+  // ----------------------------------------------------------
+  // Authorization
+  //
+  // Admin / Administrator:
+  //   Can modify attendance for any session.
+  //
+  // Lecturer:
+  //   Can modify only sessions opened by that lecturer.
   //
   // Support both common auth shapes:
   // req.user.id
   // req.user.userId
+  // ----------------------------------------------------------
+
   const currentUserId =
     req.user?.id ??
     req.user?.userId;
+
+  const currentUserRole = String(
+    req.user?.role ??
+    req.user?.role_name ??
+    ""
+  ).toLowerCase().trim();
+
+  const isAdmin =
+    currentUserRole === "admin" ||
+    currentUserRole === "administrator";
 
   if (
     currentUserId === undefined ||
@@ -332,8 +351,9 @@ async function updateAttendance(req, res) {
   }
 
   if (
+    !isAdmin &&
     Number(session.opened_by) !==
-    Number(currentUserId)
+      Number(currentUserId)
   ) {
     return res.status(403).json({
       message:
