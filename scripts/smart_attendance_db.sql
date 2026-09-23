@@ -685,6 +685,8 @@ CREATE TABLE `users` (
   `last_name` varchar(100) NOT NULL,
   `email` varchar(255) DEFAULT NULL,
   `password_hash` varchar(255) NOT NULL,
+  `password_reset_token_hash` varchar(255) DEFAULT NULL,
+  `password_reset_expires_at` datetime DEFAULT NULL,
   `phone` varchar(30) DEFAULT NULL,
   `status` enum('active','inactive','suspended') DEFAULT 'active',
   `last_login_at` datetime DEFAULT NULL,

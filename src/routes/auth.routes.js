@@ -5,12 +5,18 @@ const {
   me,
   updateMe,
   changeMyPassword,
-  register
+  register,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/auth.controller");
 
 const {
   authenticate
 } = require("../middleware/auth");
+
+const {
+  authLimiter
+} = require("../middleware/rateLimit");
 
 const router = express.Router();
 
@@ -65,6 +71,28 @@ router.put(
   "/auth/me/password",
   authenticate,
   changeMyPassword
+);
+
+// ============================================================
+// FORGOT PASSWORD
+// POST /api/auth/forgot-password
+// ============================================================
+
+router.post(
+  "/auth/forgot-password",
+  authLimiter,
+  forgotPassword
+);
+
+// ============================================================
+// RESET PASSWORD
+// POST /api/auth/reset-password
+// ============================================================
+
+router.post(
+  "/auth/reset-password",
+  authLimiter,
+  resetPassword
 );
 
 module.exports = router;

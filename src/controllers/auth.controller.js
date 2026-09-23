@@ -1,6 +1,11 @@
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/db");
 const { signToken } = require("../utils/jwt");
+const {
+  generateResetToken,
+  hashResetToken,
+  sendPasswordResetEmail,
+} = require("../utils/mailer");
 
 // ============================================================
 // GET USER PERMISSIONS
@@ -606,6 +611,199 @@ async function register(req, res) {
 }
 
 // ============================================================
+// FORGOT PASSWORD
+// POST /api/auth/forgot-password
+//
+// Always returns the same message so account existence
+// cannot be probed through response differences.
+// ============================================================
+
+async function forgotPassword(req, res) {
+  try {
+    const { email, identifier } = req.body || {};
+
+    const rawIdentifier = String(
+      email || identifier || ""
+    ).trim();
+
+    if (!rawIdentifier) {
+      return res.status(400).json({
+        message:
+          "Email or university ID is required",
+      });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.first_name,
+        u.email,
+        u.status
+      FROM users u
+      LEFT JOIN student_profiles sp
+        ON sp.user_id = u.id
+      WHERE u.email = ?
+        OR sp.student_code = ?
+      LIMIT 1
+      `,
+      [rawIdentifier, rawIdentifier]
+    );
+
+    // Uniform response regardless of outcome.
+    const done = () =>
+      res.json({
+        message:
+          "If the account exists, a password reset link has been sent.",
+      });
+
+    if (!rows.length) {
+      return done();
+    }
+
+    const account = rows[0];
+
+    if (
+      account.status !== "active" ||
+      !account.email
+    ) {
+      return done();
+    }
+
+    const expiresMinutes = Number(
+      process.env.RESET_TOKEN_EXPIRES_MINUTES || 60
+    );
+
+    const token = generateResetToken();
+
+    await pool.query(
+      `
+      UPDATE users
+      SET
+        password_reset_token_hash = ?,
+        password_reset_expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE)
+      WHERE id = ?
+      `,
+      [
+        hashResetToken(token),
+        expiresMinutes,
+        account.id,
+      ]
+    );
+
+    try {
+      await sendPasswordResetEmail({
+        to: account.email,
+        firstName: account.first_name,
+        token,
+        expiresMinutes,
+      });
+    } catch (mailError) {
+      console.error(
+        "Password reset email error:",
+        mailError
+      );
+    }
+
+    return done();
+  } catch (error) {
+    console.error(
+      "Forgot password error:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Could not process the password reset request",
+    });
+  }
+}
+
+// ============================================================
+// RESET PASSWORD
+// POST /api/auth/reset-password
+// ============================================================
+
+async function resetPassword(req, res) {
+  try {
+    const { token, newPassword } = req.body || {};
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        message:
+          "Reset token and new password are required",
+      });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({
+        message:
+          "New password must be at least 8 characters",
+      });
+    }
+
+    const [rows] = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE password_reset_token_hash = ?
+        AND password_reset_expires_at IS NOT NULL
+        AND password_reset_expires_at > NOW()
+      LIMIT 1
+      `,
+      [hashResetToken(String(token))]
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({
+        message:
+          "This password reset link is invalid or has expired.",
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(
+      String(newPassword),
+      10
+    );
+
+    // Single-use: clear the token in the same update.
+    const [result] = await pool.query(
+      `
+      UPDATE users
+      SET
+        password_hash = ?,
+        password_reset_token_hash = NULL,
+        password_reset_expires_at = NULL
+      WHERE id = ?
+        AND password_reset_token_hash IS NOT NULL
+      `,
+      [passwordHash, rows[0].id]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(400).json({
+        message:
+          "This password reset link is invalid or has expired.",
+      });
+    }
+
+    return res.json({
+      message:
+        "Your password has been updated successfully.",
+    });
+  } catch (error) {
+    console.error(
+      "Reset password error:",
+      error
+    );
+
+    return res.status(500).json({
+      message: "Could not reset the password",
+    });
+  }
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 
@@ -615,4 +813,6 @@ module.exports = {
   updateMe,
   changeMyPassword,
   register,
+  forgotPassword,
+  resetPassword,
 };
