@@ -30,8 +30,10 @@ function getUserRole(req) {
 //
 // Supported filters:
 // ?sectionId=1
-// ?fromDate=2026-09-01
-// ?toDate=2026-09-30
+// ?courseId=1
+// ?status=present
+// ?startDate=2026-09-01
+// ?endDate=2026-09-30
 // ============================================================
 
 async function attendanceSummary(req, res) {
@@ -45,12 +47,18 @@ async function attendanceSummary(req, res) {
     }
 
     const role = getUserRole(req);
-    const isAdmin = role === "admin";
+
+    // Admin and administrator can see all attendance
+    const isAdmin =
+      role === "admin" ||
+      role === "administrator";
 
     const {
       sectionId,
-      fromDate,
-      toDate,
+      courseId,
+      status,
+      startDate,
+      endDate,
     } = req.query;
 
     const conditions = [];
@@ -80,21 +88,51 @@ async function attendanceSummary(req, res) {
     }
 
     // ========================================================
+    // COURSE FILTER
+    // ========================================================
+
+    if (
+      courseId !== undefined &&
+      courseId !== null &&
+      String(courseId).trim() !== ""
+    ) {
+      conditions.push("c.id = ?");
+      params.push(Number(courseId));
+    }
+
+    // ========================================================
+    // STATUS FILTER
+    // ========================================================
+
+    if (
+      status !== undefined &&
+      status !== null &&
+      String(status).trim() !== ""
+    ) {
+      conditions.push("ae.status = ?");
+      params.push(String(status).trim());
+    }
+
+    // ========================================================
     // DATE FILTER - FROM
     // ========================================================
 
-    if (fromDate) {
-      conditions.push("DATE(ses.session_date) >= ?");
-      params.push(fromDate);
+    if (startDate) {
+      conditions.push(
+        "DATE(ses.session_date) >= ?"
+      );
+      params.push(startDate);
     }
 
     // ========================================================
     // DATE FILTER - TO
     // ========================================================
 
-    if (toDate) {
-      conditions.push("DATE(ses.session_date) <= ?");
-      params.push(toDate);
+    if (endDate) {
+      conditions.push(
+        "DATE(ses.session_date) <= ?"
+      );
+      params.push(endDate);
     }
 
     // ========================================================
@@ -107,7 +145,7 @@ async function attendanceSummary(req, res) {
         : "";
 
     // ========================================================
-    // QUERY
+    // GET ATTENDANCE RECORDS
     // ========================================================
 
     const [rows] = await pool.query(
@@ -136,7 +174,9 @@ async function attendanceSummary(req, res) {
           ses.scheduled_start,
           ses.scheduled_end,
 
+          ae.status AS attendance_status,
           ae.status,
+
           ae.source,
           ae.scanned_at,
           ae.validation_status
@@ -168,7 +208,17 @@ async function attendanceSummary(req, res) {
       params
     );
 
-    return res.json(rows);
+    // ========================================================
+    // IMPORTANT:
+    // Frontend expects:
+    // {
+    //   records: [...]
+    // }
+    // ========================================================
+
+    return res.json({
+      records: rows,
+    });
 
   } catch (error) {
     console.error(
@@ -177,7 +227,9 @@ async function attendanceSummary(req, res) {
     );
 
     return res.status(500).json({
-      message: "Failed to load attendance report",
+      message:
+        "Failed to load attendance report",
+
       error:
         process.env.NODE_ENV === "development"
           ? error.message
@@ -204,13 +256,19 @@ async function courseSummary(req, res) {
     }
 
     const role = getUserRole(req);
-    const isAdmin = role === "admin";
+
+    const isAdmin =
+      role === "admin" ||
+      role === "administrator";
 
     const conditions = [];
     const params = [];
 
     if (!isAdmin) {
-      conditions.push("sec.lecturer_id = ?");
+      conditions.push(
+        "sec.lecturer_id = ?"
+      );
+
       params.push(userId);
     }
 
@@ -312,10 +370,14 @@ async function courseSummary(req, res) {
 
     const result = rows.map((row) => {
       const attendanceRecords =
-        Number(row.attendance_records || 0);
+        Number(
+          row.attendance_records || 0
+        );
 
       const attendedRecords =
-        Number(row.attended_records || 0);
+        Number(
+          row.attended_records || 0
+        );
 
       const attendanceRate =
         attendanceRecords > 0
@@ -332,7 +394,9 @@ async function courseSummary(req, res) {
         ...row,
 
         enrolled_students:
-          Number(row.enrolled_students || 0),
+          Number(
+            row.enrolled_students || 0
+          ),
 
         attendance_records:
           attendanceRecords,
@@ -341,13 +405,19 @@ async function courseSummary(req, res) {
           attendedRecords,
 
         present_records:
-          Number(row.present_records || 0),
+          Number(
+            row.present_records || 0
+          ),
 
         late_records:
-          Number(row.late_records || 0),
+          Number(
+            row.late_records || 0
+          ),
 
         absent_records:
-          Number(row.absent_records || 0),
+          Number(
+            row.absent_records || 0
+          ),
 
         attendance_rate:
           attendanceRate,
@@ -363,7 +433,9 @@ async function courseSummary(req, res) {
     );
 
     return res.status(500).json({
-      message: "Failed to load course report",
+      message:
+        "Failed to load course report",
+
       error:
         process.env.NODE_ENV === "development"
           ? error.message
@@ -379,41 +451,47 @@ async function courseSummary(req, res) {
 
 async function dashboard(req, res) {
   try {
-    const [[students]] = await pool.query(
-      `
-        SELECT COUNT(*) AS total
-        FROM student_profiles
-      `
-    );
+    const [[students]] =
+      await pool.query(
+        `
+          SELECT COUNT(*) AS total
+          FROM student_profiles
+        `
+      );
 
-    const [[sessions]] = await pool.query(
-      `
-        SELECT COUNT(*) AS total
-        FROM attendance_sessions
-      `
-    );
+    const [[sessions]] =
+      await pool.query(
+        `
+          SELECT COUNT(*) AS total
+          FROM attendance_sessions
+        `
+      );
 
-    const [[attendance]] = await pool.query(
-      `
-        SELECT COUNT(*) AS total
-        FROM attendance_events
-        WHERE validation_status = 'accepted'
-      `
-    );
+    const [[attendance]] =
+      await pool.query(
+        `
+          SELECT COUNT(*) AS total
+          FROM attendance_events
+          WHERE validation_status = 'accepted'
+        `
+      );
 
     let pendingCorrections = 0;
 
     try {
-      const [[pending]] = await pool.query(
-        `
-          SELECT COUNT(*) AS total
-          FROM correction_requests
-          WHERE status = 'pending'
-        `
-      );
+      const [[pending]] =
+        await pool.query(
+          `
+            SELECT COUNT(*) AS total
+            FROM correction_requests
+            WHERE status = 'pending'
+          `
+        );
 
       pendingCorrections =
-        Number(pending.total || 0);
+        Number(
+          pending.total || 0
+        );
 
     } catch (error) {
       console.warn(
@@ -426,13 +504,19 @@ async function dashboard(req, res) {
 
     return res.json({
       students:
-        Number(students.total || 0),
+        Number(
+          students.total || 0
+        ),
 
       sessions:
-        Number(sessions.total || 0),
+        Number(
+          sessions.total || 0
+        ),
 
       attendanceRecords:
-        Number(attendance.total || 0),
+        Number(
+          attendance.total || 0
+        ),
 
       pendingCorrections,
     });
@@ -444,7 +528,9 @@ async function dashboard(req, res) {
     );
 
     return res.status(500).json({
-      message: "Failed to load dashboard",
+      message:
+        "Failed to load dashboard",
+
       error:
         process.env.NODE_ENV === "development"
           ? error.message
@@ -471,19 +557,21 @@ async function studentDashboard(req, res) {
     // GET STUDENT PROFILE
     // ========================================================
 
-    const [studentRows] = await pool.query(
-      `
-        SELECT id
-        FROM student_profiles
-        WHERE user_id = ?
-        LIMIT 1
-      `,
-      [userId]
-    );
+    const [studentRows] =
+      await pool.query(
+        `
+          SELECT id
+          FROM student_profiles
+          WHERE user_id = ?
+          LIMIT 1
+        `,
+        [userId]
+      );
 
     if (!studentRows.length) {
       return res.status(404).json({
-        message: "Student profile not found",
+        message:
+          "Student profile not found",
       });
     }
 
@@ -561,10 +649,14 @@ async function studentDashboard(req, res) {
     // ========================================================
 
     const totalSessions =
-      Number(sessions.total || 0);
+      Number(
+        sessions.total || 0
+      );
 
     const attendedSessions =
-      Number(present.total || 0);
+      Number(
+        present.total || 0
+      );
 
     const attendanceRate =
       totalSessions > 0
@@ -581,12 +673,16 @@ async function studentDashboard(req, res) {
       studentId,
 
       enrolledSections:
-        Number(enrolled.total || 0),
+        Number(
+          enrolled.total || 0
+        ),
 
       totalSessions,
 
       attendanceRecords:
-        Number(attendance.total || 0),
+        Number(
+          attendance.total || 0
+        ),
 
       attendedSessions,
 
