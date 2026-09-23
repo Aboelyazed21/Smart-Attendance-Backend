@@ -173,19 +173,8 @@ async function review(req, res) {
         `
           UPDATE attendance_events
           SET
-            status = 'present',
+            status = ?,
             source = 'correction'
-          WHERE id = ?
-        `,
-        [request.attendance_event_id]
-      );
-
-      // Apply the exact requested status
-      await connection.query(
-        `
-          UPDATE attendance_events
-          SET
-            status = ?
           WHERE id = ?
         `,
         [
@@ -202,7 +191,15 @@ async function review(req, res) {
     });
   } catch (error) {
     await connection.rollback();
-    throw error;
+
+    console.error(
+      "Review correction error:",
+      error
+    );
+
+    return res.status(500).json({
+      message: "Failed to review correction"
+    });
   } finally {
     connection.release();
   }
@@ -211,72 +208,308 @@ async function review(req, res) {
 // ============================================================
 // MANUAL ATTENDANCE CORRECTION
 // PATCH /api/corrections/:eventId
+//
+// IMPORTANT:
+// eventId may be 0 when the student currently has no
+// attendance_events record (for example, Absent).
+//
+// In that case we use:
+// sessionId + studentId
+//
+// Existing event  -> UPDATE
+// No existing event -> INSERT
 // ============================================================
 
 async function updateAttendance(req, res) {
   const {
+    sessionId,
+    studentId,
     status,
+    reason,
     notes
   } = req.body;
 
-  const eventId = Number(req.params.eventId);
+  // ----------------------------------------------------------
+  // Accept either reason or notes from the frontend
+  // ----------------------------------------------------------
 
-  if (!Number.isInteger(eventId) || eventId <= 0) {
+  const correctionReason = reason || notes || null;
+
+  // ----------------------------------------------------------
+  // Validate basic input
+  // ----------------------------------------------------------
+
+  if (!sessionId || !studentId || !status || !correctionReason) {
     return res.status(400).json({
-      message: "Invalid attendance event id"
+      message:
+        "sessionId, studentId, status and reason are required"
     });
   }
 
-  if (
-    !["present", "absent", "late", "excused"].includes(status)
-  ) {
+  const allowedStatuses = [
+    "present",
+    "absent",
+    "late",
+    "excused"
+  ];
+
+  if (!allowedStatuses.includes(status)) {
     return res.status(400).json({
       message:
         "Status must be present, absent, late, or excused"
     });
   }
 
-  const [existing] = await pool.query(
+  const numericSessionId = Number(sessionId);
+
+  if (
+    !Number.isInteger(numericSessionId) ||
+    numericSessionId <= 0
+  ) {
+    return res.status(400).json({
+      message: "Invalid session id"
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Normalize student ID
+  //
+  // studentId may be:
+  // - student_profiles.id
+  // - student_code
+  // ----------------------------------------------------------
+
+  const normalizedStudentId = String(studentId).trim();
+
+  if (!normalizedStudentId) {
+    return res.status(400).json({
+      message: "Invalid student id"
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Check session + lecturer ownership
+  // ----------------------------------------------------------
+
+  const [sessionRows] = await pool.query(
     `
-      SELECT id
-      FROM attendance_events
+      SELECT
+        id,
+        section_id,
+        opened_by,
+        status
+      FROM attendance_sessions
       WHERE id = ?
       LIMIT 1
     `,
-    [eventId]
+    [numericSessionId]
   );
 
-  if (!existing.length) {
+  if (!sessionRows.length) {
     return res.status(404).json({
-      message: "Attendance event not found"
+      message: "Attendance session not found"
     });
   }
 
-  const [result] = await pool.query(
+  const session = sessionRows[0];
+
+  // The lecturer must own the session.
+  //
+  // Support both common auth shapes:
+  // req.user.id
+  // req.user.userId
+  const currentUserId =
+    req.user?.id ??
+    req.user?.userId;
+
+  if (
+    currentUserId === undefined ||
+    currentUserId === null
+  ) {
+    return res.status(401).json({
+      message: "User authentication information is missing"
+    });
+  }
+
+  if (
+    Number(session.opened_by) !==
+    Number(currentUserId)
+  ) {
+    return res.status(403).json({
+      message:
+        "You are not authorized to modify this session"
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Find student
+  // ----------------------------------------------------------
+
+  const [studentRows] = await pool.query(
     `
-      UPDATE attendance_events
-      SET
-        status = ?,
-        source = 'correction',
-        notes = ?
-      WHERE id = ?
+      SELECT
+        sp.id,
+        sp.student_code,
+        sp.user_id
+      FROM student_profiles sp
+      WHERE
+        sp.id = ?
+        OR sp.student_code = ?
+      LIMIT 1
     `,
     [
-      status,
-      notes || null,
-      eventId
+      normalizedStudentId,
+      normalizedStudentId
     ]
   );
 
-  if (!result.affectedRows) {
+  if (!studentRows.length) {
     return res.status(404).json({
-      message: "Attendance event not found"
+      message: "Student not found"
     });
   }
 
-  return res.json({
-    message: "Attendance corrected successfully",
-    attendanceEventId: eventId,
+  const student = studentRows[0];
+
+  // ----------------------------------------------------------
+  // Check that the student belongs to this section
+  // ----------------------------------------------------------
+
+  const [enrollmentRows] = await pool.query(
+    `
+      SELECT
+        id,
+        status
+      FROM enrollments
+      WHERE
+        student_id = ?
+        AND section_id = ?
+      LIMIT 1
+    `,
+    [
+      student.id,
+      session.section_id
+    ]
+  );
+
+  if (!enrollmentRows.length) {
+    return res.status(403).json({
+      message:
+        "Student is not enrolled in this session section"
+    });
+  }
+
+  // ----------------------------------------------------------
+  // Find existing attendance event
+  //
+  // This is the important part.
+  //
+  // We DON'T require eventId.
+  //
+  // We search by:
+  // session + student
+  // ----------------------------------------------------------
+
+  const [existingRows] = await pool.query(
+    `
+      SELECT
+        id,
+        student_id,
+        session_id,
+        status,
+        source,
+        notes
+      FROM attendance_events
+      WHERE
+        session_id = ?
+        AND student_id = ?
+      ORDER BY id DESC
+      LIMIT 1
+    `,
+    [
+      numericSessionId,
+      student.id
+    ]
+  );
+
+  // ==========================================================
+  // CASE 1: Existing attendance event
+  // ==========================================================
+
+  if (existingRows.length) {
+    const existing = existingRows[0];
+
+    const [result] = await pool.query(
+      `
+        UPDATE attendance_events
+        SET
+          status = ?,
+          source = 'correction',
+          notes = ?,
+          validation_status = 'accepted'
+        WHERE id = ?
+      `,
+      [
+        status,
+        correctionReason,
+        existing.id
+      ]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({
+        message: "Attendance event not found"
+      });
+    }
+
+    return res.json({
+      message:
+        "Attendance corrected successfully",
+      action: "updated",
+      attendanceEventId: existing.id,
+      studentId: student.id,
+      sessionId: numericSessionId,
+      status
+    });
+  }
+
+  // ==========================================================
+  // CASE 2: No attendance event
+  //
+  // This is the Absent case.
+  //
+  // Create a new attendance event.
+  // ==========================================================
+
+  const [insertResult] = await pool.query(
+    `
+      INSERT INTO attendance_events
+      (
+        student_id,
+        session_id,
+        status,
+        source,
+        validation_status,
+        scanned_at,
+        notes
+      )
+      VALUES (?, ?, ?, 'correction', 'accepted', NOW(), ?)
+    `,
+    [
+      student.id,
+      numericSessionId,
+      status,
+      correctionReason
+    ]
+  );
+
+  return res.status(201).json({
+    message:
+      "Attendance created and corrected successfully",
+    action: "created",
+    attendanceEventId: insertResult.insertId,
+    studentId: student.id,
+    sessionId: numericSessionId,
     status
   });
 }
