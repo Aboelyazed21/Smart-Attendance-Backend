@@ -32,6 +32,8 @@ const timetableRoutes = require("./timetable.routes");
 
 const studentRoutes = require("./student.routes");
 
+const studentAttendanceRoutes = require("./studentAttendance.routes");
+
 const adminRoutes = require("./admin.routes");
 
 const correctionRoutes = require("./correction.routes");
@@ -130,6 +132,15 @@ router.use(
 router.use(
   "/students",
   studentRoutes
+);
+
+// ============================================================
+// STUDENT ATTENDANCE ANALYTICS
+// ============================================================
+
+router.use(
+  "/student/attendance",
+  studentAttendanceRoutes
 );
 
 // ============================================================

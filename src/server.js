@@ -5,6 +5,9 @@ const { pool, testConnection } = require("./config/db");
 const { execFile } = require("child_process");
 const path = require("path");
 const bcrypt = require("bcryptjs");
+const {
+  startWeeklyAttendanceJob,
+} = require("./jobs/weeklyAttendance.job");
 
 const PORT = Number(process.env.PORT || 5000);
 
@@ -110,6 +113,17 @@ async function start() {
         `Health: http://localhost:${PORT}/health`
       );
     });
+
+    // Weekly WhatsApp summaries run inside try/catch and
+    // skip gracefully when WhatsApp is not configured.
+    try {
+      startWeeklyAttendanceJob();
+    } catch (jobError) {
+      console.error(
+        "Could not start weekly summary job:",
+        jobError.message
+      );
+    }
   } catch (error) {
     console.error("Could not start server:", error.message);
     process.exit(1);

@@ -66,6 +66,15 @@ const {
 } = require("../controllers/import.controller");
 
 // ============================================================
+// ADMIN NOTIFICATIONS CONTROLLER
+// ============================================================
+
+const {
+    runWeeklySummary
+
+} = require("../controllers/adminNotifications.controller");
+
+// ============================================================
 // ADMIN TEST
 // ============================================================
 
@@ -309,6 +318,18 @@ router.get(
     authenticate,
     requirePermission("user.manage"),
     getTimetable
+);
+
+// ============================================================
+// WEEKLY WHATSAPP SUMMARIES (manual trigger)
+// POST /api/admin/attendance-summaries/run
+// ============================================================
+
+router.post(
+    "/attendance-summaries/run",
+    authenticate,
+    requirePermission("user.manage"),
+    runWeeklySummary
 );
 
 // ============================================================
