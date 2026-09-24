@@ -57,7 +57,7 @@ async function list(req, res) {
     INNER JOIN courses c
       ON c.id = s.course_id
 
-    INNER JOIN rooms r
+    LEFT JOIN rooms r
       ON r.id = t.room_id
 
     ORDER BY
@@ -119,7 +119,7 @@ async function getById(req, res) {
       INNER JOIN courses c
         ON c.id = s.course_id
 
-      INNER JOIN rooms r
+      LEFT JOIN rooms r
         ON r.id = t.room_id
 
       WHERE t.id = ?
@@ -156,20 +156,19 @@ async function create(req, res) {
   /*
   |--------------------------------------------------------------------------
   | Required Fields
+  | Room and dates are optional: the schema allows NULL room_id,
+  | start_date and end_date, and the UI offers a "No Room" choice.
   |--------------------------------------------------------------------------
   */
 
   if (
     !sectionId ||
-    !roomId ||
     !dayOfWeek ||
     !startTime ||
-    !endTime ||
-    !startDate ||
-    !endDate
+    !endTime
   ) {
     return res.status(400).json({
-      message: "All timetable fields are required",
+      message: "Section, day and time are required",
     });
   }
 
@@ -199,11 +198,11 @@ async function create(req, res) {
 
   /*
   |--------------------------------------------------------------------------
-  | Validate Dates
+  | Validate Dates (only when both are provided)
   |--------------------------------------------------------------------------
   */
 
-  if (startDate > endDate) {
+  if (startDate && endDate && startDate > endDate) {
     return res.status(400).json({
       message: "Start date must be before or equal to end date",
     });
@@ -234,25 +233,33 @@ async function create(req, res) {
 
   /*
   |--------------------------------------------------------------------------
-  | Check Room
+  | Check Room (optional — a slot may have no room yet)
   |--------------------------------------------------------------------------
   */
 
-  const [roomRows] = await pool.query(
-    `
+  let roomRows = [];
+
+  if (
+    roomId !== undefined &&
+    roomId !== null &&
+    roomId !== ""
+  ) {
+    [roomRows] = await pool.query(
+      `
       SELECT
         id,
         capacity
       FROM rooms
       WHERE id = ?
-    `,
-    [roomId]
-  );
+      `,
+      [roomId]
+    );
 
-  if (!roomRows.length) {
-    return res.status(404).json({
-      message: "Room not found",
-    });
+    if (!roomRows.length) {
+      return res.status(404).json({
+        message: "Room not found",
+      });
+    }
   }
 
   /*
@@ -262,6 +269,7 @@ async function create(req, res) {
   */
 
   if (
+    roomRows.length &&
     sectionRows[0].capacity &&
     roomRows[0].capacity &&
     sectionRows[0].capacity > roomRows[0].capacity
@@ -275,11 +283,19 @@ async function create(req, res) {
   /*
   |--------------------------------------------------------------------------
   | Check Schedule Conflict
+  | Room-less or open-dated slots cannot be reliably
+  | compared, so the check only runs when room and both
+  | dates are known.
   |--------------------------------------------------------------------------
   */
 
-  const [conflicts] = await pool.query(
-    `
+  if (
+    roomRows.length &&
+    startDate &&
+    endDate
+  ) {
+    const [conflicts] = await pool.query(
+      `
       SELECT
         t.id,
         t.section_id,
@@ -297,23 +313,24 @@ async function create(req, res) {
 
         AND t.start_time < ?
         AND t.end_time > ?
-    `,
-    [
-      roomId,
-      dayOfWeek,
-      endDate,
-      startDate,
-      endTime,
-      startTime,
-    ]
-  );
+      `,
+      [
+        roomId,
+        dayOfWeek,
+        endDate,
+        startDate,
+        endTime,
+        startTime,
+      ]
+    );
 
-  if (conflicts.length) {
-    return res.status(409).json({
-      message:
-        "This room already has another timetable slot at the selected time",
-      conflict: conflicts[0],
-    });
+    if (conflicts.length) {
+      return res.status(409).json({
+        message:
+          "This room already has another timetable slot at the selected time",
+        conflict: conflicts[0],
+      });
+    }
   }
 
   /*
@@ -339,12 +356,12 @@ async function create(req, res) {
     `,
     [
       sectionId,
-      roomId,
+      roomId ?? null,
       dayOfWeek,
       startTime,
       endTime,
-      startDate,
-      endDate,
+      startDate ?? null,
+      endDate ?? null,
     ]
   );
 
@@ -435,7 +452,7 @@ async function update(req, res) {
     });
   }
 
-  if (finalStartDate > finalEndDate) {
+  if (finalStartDate && finalEndDate && finalStartDate > finalEndDate) {
     return res.status(400).json({
       message: "Start date must be before or equal to end date",
     });
@@ -466,25 +483,33 @@ async function update(req, res) {
 
   /*
   |--------------------------------------------------------------------------
-  | Check Room
+  | Check Room (a slot may have no room yet)
   |--------------------------------------------------------------------------
   */
 
-  const [roomRows] = await pool.query(
-    `
+  let roomRows = [];
+
+  if (
+    finalRoomId !== undefined &&
+    finalRoomId !== null &&
+    finalRoomId !== ""
+  ) {
+    [roomRows] = await pool.query(
+      `
       SELECT
         id,
         capacity
       FROM rooms
       WHERE id = ?
-    `,
-    [finalRoomId]
-  );
+      `,
+      [finalRoomId]
+    );
 
-  if (!roomRows.length) {
-    return res.status(404).json({
-      message: "Room not found",
-    });
+    if (!roomRows.length) {
+      return res.status(404).json({
+        message: "Room not found",
+      });
+    }
   }
 
   /*
@@ -494,6 +519,7 @@ async function update(req, res) {
   */
 
   if (
+    roomRows.length &&
     sectionRows[0].capacity &&
     roomRows[0].capacity &&
     sectionRows[0].capacity > roomRows[0].capacity
@@ -506,12 +532,17 @@ async function update(req, res) {
 
   /*
   |--------------------------------------------------------------------------
-  | Check Conflict
+  | Check Conflict (only when room and both dates are known)
   |--------------------------------------------------------------------------
   */
 
-  const [conflicts] = await pool.query(
-    `
+  if (
+    roomRows.length &&
+    finalStartDate &&
+    finalEndDate
+  ) {
+    const [conflicts] = await pool.query(
+      `
       SELECT
         t.id,
         t.section_id,
@@ -531,24 +562,25 @@ async function update(req, res) {
 
         AND t.start_time < ?
         AND t.end_time > ?
-    `,
-    [
-      timetableId,
-      finalRoomId,
-      finalDay,
-      finalEndDate,
-      finalStartDate,
-      finalEndTime,
-      finalStartTime,
-    ]
-  );
+      `,
+      [
+        timetableId,
+        finalRoomId,
+        finalDay,
+        finalEndDate,
+        finalStartDate,
+        finalEndTime,
+        finalStartTime,
+      ]
+    );
 
-  if (conflicts.length) {
-    return res.status(409).json({
-      message:
-        "This room already has another timetable slot at the selected time",
-      conflict: conflicts[0],
-    });
+    if (conflicts.length) {
+      return res.status(409).json({
+        message:
+          "This room already has another timetable slot at the selected time",
+        conflict: conflicts[0],
+      });
+    }
   }
 
   /*
