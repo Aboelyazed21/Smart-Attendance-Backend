@@ -2,6 +2,9 @@
 
 const app = require("./app");
 const { pool, testConnection } = require("./config/db");
+const {
+  ensureSchema,
+} = require("./config/ensureSchema");
 const { execFile } = require("child_process");
 const path = require("path");
 const bcrypt = require("bcryptjs");
@@ -99,6 +102,9 @@ async function resetUserIfEnabled() {
 async function start() {
   try {
     await testConnection();
+
+    // Additive helper tables only (IF NOT EXISTS).
+    await ensureSchema(pool);
 
     await importDatabaseIfEnabled();
 
