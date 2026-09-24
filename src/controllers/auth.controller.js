@@ -6,6 +6,19 @@ const {
   hashResetToken,
   sendPasswordResetEmail,
 } = require("../utils/mailer");
+const {
+  PASSWORD_ERROR,
+  PHONE_ERROR,
+  FIRST_NAME_ERROR,
+  LAST_NAME_ERROR,
+  normalizeName,
+  isValidName,
+  normalizePhone,
+  normalizeEgyptianPhone,
+  isValidEgyptianPhone,
+  isValidPassword,
+  isEmailIdentifier,
+} = require("../utils/validation");
 
 // ============================================================
 // GET USER PERMISSIONS
@@ -31,40 +44,6 @@ async function getUserPermissions(userId) {
   );
 
   return rows.map((row) => row.name);
-}
-
-// ============================================================
-// PHONE + IDENTIFIER HELPERS
-// Shared by register/login so both sides enforce the same
-// rules. Leading "+" is preserved for international format.
-// ============================================================
-
-function normalizePhone(value) {
-  if (
-    value === undefined ||
-    value === null
-  ) {
-    return "";
-  }
-
-  let text = String(value).trim();
-
-  // Allow common separators, then keep digits + one leading "+".
-  text = text.replace(/[\s\-().]/g, "");
-
-  text = text.replace(/\+(?=.*\+)/g, "");
-
-  return text;
-}
-
-function isValidPhone(normalized) {
-  return /^\+?[0-9]{7,15}$/.test(
-    normalized || ""
-  );
-}
-
-function isEmailIdentifier(value) {
-  return String(value || "").includes("@");
 }
 
 // ============================================================
@@ -314,10 +293,10 @@ async function updateMe(req, res) {
     }
 
     const normalizedFirstName =
-      firstName.trim();
+      normalizeName(firstName);
 
     const normalizedLastName =
-      lastName.trim();
+      normalizeName(lastName);
 
     const normalizedEmail =
       email.trim().toLowerCase();
@@ -325,9 +304,9 @@ async function updateMe(req, res) {
     const normalizedPhone =
       phone === undefined ||
       phone === null ||
-      phone === ""
+      String(phone).trim() === ""
         ? null
-        : String(phone).trim();
+        : normalizeEgyptianPhone(phone);
 
     if (
       !normalizedFirstName ||
@@ -337,6 +316,29 @@ async function updateMe(req, res) {
       return res.status(400).json({
         message:
           "First name, last name and email are required",
+      });
+    }
+
+    if (!isValidName(normalizedFirstName)) {
+      return res.status(400).json({
+        message: FIRST_NAME_ERROR,
+      });
+    }
+
+    if (!isValidName(normalizedLastName)) {
+      return res.status(400).json({
+        message: LAST_NAME_ERROR,
+      });
+    }
+
+    // A provided phone must satisfy the same strict rule
+    // used at registration. Clearing it (empty) stays NULL.
+    if (
+      normalizedPhone !== null &&
+      !isValidEgyptianPhone(normalizedPhone)
+    ) {
+      return res.status(400).json({
+        message: PHONE_ERROR,
       });
     }
 
@@ -458,10 +460,9 @@ async function changeMyPassword(req, res) {
       });
     }
 
-    if (newPassword.length < 8) {
+    if (!isValidPassword(newPassword)) {
       return res.status(400).json({
-        message:
-          "New password must be at least 8 characters",
+        message: PASSWORD_ERROR,
       });
     }
 
@@ -571,10 +572,10 @@ async function register(req, res) {
     }
 
     const normalizedFirstName =
-      String(firstName).trim();
+      normalizeName(firstName);
 
     const normalizedLastName =
-      String(lastName).trim();
+      normalizeName(lastName);
 
     const normalizedEmail =
       String(email).trim().toLowerCase();
@@ -590,7 +591,7 @@ async function register(req, res) {
         : String(universityId).trim();
 
     const normalizedPhone =
-      normalizePhone(phone);
+      normalizeEgyptianPhone(phone);
 
     if (
       !normalizedFirstName ||
@@ -604,10 +605,23 @@ async function register(req, res) {
       });
     }
 
+    if (!isValidName(normalizedFirstName)) {
+      return res.status(400).json({
+        message: FIRST_NAME_ERROR,
+      });
+    }
+
+    if (!isValidName(normalizedLastName)) {
+      return res.status(400).json({
+        message: LAST_NAME_ERROR,
+      });
+    }
+
     if (
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
         normalizedEmail
-      )
+      ) ||
+      normalizedEmail.length > 255
     ) {
       return res.status(400).json({
         message:
@@ -615,7 +629,26 @@ async function register(req, res) {
       });
     }
 
-    // Phone is required for every new student registration.
+    // University ID follows the student_code column (max 50).
+    if (
+      normalizedStudentCode.length > 50 ||
+      (normalizedUniversityId &&
+        normalizedUniversityId.length > 100)
+    ) {
+      return res.status(400).json({
+        message:
+          "Please enter a valid University ID.",
+      });
+    }
+
+    if (!isValidPassword(password)) {
+      return res.status(400).json({
+        message: PASSWORD_ERROR,
+      });
+    }
+
+    // Phone is required for every new student registration
+    // (Egyptian mobile: 010/011/012 + exactly 11 digits).
     // Existing accounts with NULL phone are left untouched.
     if (!normalizedPhone) {
       return res.status(400).json({
@@ -623,10 +656,11 @@ async function register(req, res) {
       });
     }
 
-    if (!isValidPhone(normalizedPhone)) {
+    if (
+      !isValidEgyptianPhone(normalizedPhone)
+    ) {
       return res.status(400).json({
-        message:
-          "Please enter a valid phone number",
+        message: PHONE_ERROR,
       });
     }
 
@@ -948,10 +982,9 @@ async function resetPassword(req, res) {
       });
     }
 
-    if (String(newPassword).length < 8) {
+    if (!isValidPassword(newPassword)) {
       return res.status(400).json({
-        message:
-          "New password must be at least 8 characters",
+        message: PASSWORD_ERROR,
       });
     }
 
@@ -1029,6 +1062,6 @@ module.exports = {
   forgotPassword,
   resetPassword,
   normalizePhone,
-  isValidPhone,
+  isValidEgyptianPhone,
   isEmailIdentifier,
 };

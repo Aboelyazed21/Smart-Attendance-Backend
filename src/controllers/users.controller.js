@@ -1,5 +1,13 @@
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/db");
+const {
+  PASSWORD_ERROR,
+  FIRST_NAME_ERROR,
+  LAST_NAME_ERROR,
+  normalizeName,
+  isValidName,
+  isValidPassword,
+} = require("../utils/validation");
 
 /* =========================================================
    GET ALL USERS
@@ -47,6 +55,24 @@ async function create(req, res) {
   ) {
     return res.status(400).json({
       message: "Missing required fields",
+    });
+  }
+
+  if (!isValidName(normalizeName(firstName))) {
+    return res.status(400).json({
+      message: FIRST_NAME_ERROR,
+    });
+  }
+
+  if (!isValidName(normalizeName(lastName))) {
+    return res.status(400).json({
+      message: LAST_NAME_ERROR,
+    });
+  }
+
+  if (!isValidPassword(password)) {
+    return res.status(400).json({
+      message: PASSWORD_ERROR,
     });
   }
 
@@ -129,6 +155,28 @@ async function update(req, res) {
   ) {
     return res.status(400).json({
       message: "Missing required fields",
+    });
+  }
+
+  if (!isValidName(normalizeName(firstName))) {
+    return res.status(400).json({
+      message: FIRST_NAME_ERROR,
+    });
+  }
+
+  if (!isValidName(normalizeName(lastName))) {
+    return res.status(400).json({
+      message: LAST_NAME_ERROR,
+    });
+  }
+
+  if (
+    password &&
+    password.trim() &&
+    !isValidPassword(password)
+  ) {
+    return res.status(400).json({
+      message: PASSWORD_ERROR,
     });
   }
 

@@ -1,5 +1,16 @@
 const { pool } = require("../config/db");
 const bcrypt = require("bcryptjs");
+const {
+  PASSWORD_ERROR,
+  PHONE_ERROR,
+  FIRST_NAME_ERROR,
+  LAST_NAME_ERROR,
+  normalizeName,
+  isValidName,
+  normalizeEgyptianPhone,
+  isValidEgyptianPhone,
+  isValidPassword,
+} = require("../utils/validation");
 
 // ============================================================
 // GET ALL STUDENTS
@@ -124,6 +135,37 @@ async function create(req, res) {
       });
     }
 
+    if (!isValidName(normalizeName(firstName))) {
+      return res.status(400).json({
+        message: FIRST_NAME_ERROR,
+      });
+    }
+
+    if (!isValidName(normalizeName(lastName))) {
+      return res.status(400).json({
+        message: LAST_NAME_ERROR,
+      });
+    }
+
+    if (!isValidPassword(password)) {
+      return res.status(400).json({
+        message: PASSWORD_ERROR,
+      });
+    }
+
+    if (
+      phone !== undefined &&
+      phone !== null &&
+      String(phone).trim() !== "" &&
+      !isValidEgyptianPhone(
+        normalizeEgyptianPhone(phone)
+      )
+    ) {
+      return res.status(400).json({
+        message: PHONE_ERROR,
+      });
+    }
+
     await connection.beginTransaction();
 
     const [existingUser] = await connection.query(
@@ -202,10 +244,14 @@ async function create(req, res) {
         (?, ?, ?, ?, ?, ?, 'active')
       `,
       [
-        firstName.trim(),
-        lastName.trim(),
+        normalizeName(firstName),
+        normalizeName(lastName),
         email.trim(),
-        phone || null,
+        phone === undefined ||
+        phone === null ||
+        String(phone).trim() === ""
+          ? null
+          : normalizeEgyptianPhone(phone),
         passwordHash,
         roleId,
       ]
@@ -356,13 +402,33 @@ async function update(req, res) {
     const values = [];
 
     if (firstName !== undefined) {
+      if (
+        !isValidName(normalizeName(firstName))
+      ) {
+        await connection.rollback();
+
+        return res.status(400).json({
+          message: FIRST_NAME_ERROR,
+        });
+      }
+
       fields.push("first_name = ?");
-      values.push(firstName.trim());
+      values.push(normalizeName(firstName));
     }
 
     if (lastName !== undefined) {
+      if (
+        !isValidName(normalizeName(lastName))
+      ) {
+        await connection.rollback();
+
+        return res.status(400).json({
+          message: LAST_NAME_ERROR,
+        });
+      }
+
       fields.push("last_name = ?");
-      values.push(lastName.trim());
+      values.push(normalizeName(lastName));
     }
 
     if (email !== undefined) {
@@ -371,8 +437,25 @@ async function update(req, res) {
     }
 
     if (phone !== undefined) {
+      const normalizedPhone =
+        phone === null ||
+        String(phone).trim() === ""
+          ? null
+          : normalizeEgyptianPhone(phone);
+
+      if (
+        normalizedPhone !== null &&
+        !isValidEgyptianPhone(normalizedPhone)
+      ) {
+        await connection.rollback();
+
+        return res.status(400).json({
+          message: PHONE_ERROR,
+        });
+      }
+
       fields.push("phone = ?");
-      values.push(phone || null);
+      values.push(normalizedPhone);
     }
 
     if (status !== undefined) {
@@ -381,6 +464,14 @@ async function update(req, res) {
     }
 
     if (password) {
+      if (!isValidPassword(password)) {
+        await connection.rollback();
+
+        return res.status(400).json({
+          message: PASSWORD_ERROR,
+        });
+      }
+
       const passwordHash = await bcrypt.hash(password, 10);
 
       fields.push("password_hash = ?");

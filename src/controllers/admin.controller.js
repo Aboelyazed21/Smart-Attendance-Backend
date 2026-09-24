@@ -1,5 +1,13 @@
 const bcrypt = require("bcryptjs");
 const { pool } = require("../config/db");
+const {
+  PASSWORD_ERROR,
+  FIRST_NAME_ERROR,
+  LAST_NAME_ERROR,
+  normalizeName,
+  isValidName,
+  isValidPassword,
+} = require("../utils/validation");
 
 // ============================================================
 // USERS
@@ -63,6 +71,27 @@ const createUser = async (req, res) => {
         return res.status(400).json({
             success: false,
             message: "roleId, firstName, lastName, email and password are required"
+        });
+    }
+
+    if (!isValidName(normalizeName(firstName))) {
+        return res.status(400).json({
+            success: false,
+            message: FIRST_NAME_ERROR
+        });
+    }
+
+    if (!isValidName(normalizeName(lastName))) {
+        return res.status(400).json({
+            success: false,
+            message: LAST_NAME_ERROR
+        });
+    }
+
+    if (!isValidPassword(password)) {
+        return res.status(400).json({
+            success: false,
+            message: PASSWORD_ERROR
         });
     }
 
@@ -144,13 +173,27 @@ const updateUser = async (req, res) => {
     }
 
     if (firstName !== undefined) {
+        if (!isValidName(normalizeName(firstName))) {
+            return res.status(400).json({
+                success: false,
+                message: FIRST_NAME_ERROR
+            });
+        }
+
         fields.push("first_name = ?");
-        values.push(firstName);
+        values.push(normalizeName(firstName));
     }
 
     if (lastName !== undefined) {
+        if (!isValidName(normalizeName(lastName))) {
+            return res.status(400).json({
+                success: false,
+                message: LAST_NAME_ERROR
+            });
+        }
+
         fields.push("last_name = ?");
-        values.push(lastName);
+        values.push(normalizeName(lastName));
     }
 
     if (email !== undefined) {
@@ -178,6 +221,13 @@ const updateUser = async (req, res) => {
     }
 
     if (password) {
+        if (!isValidPassword(password)) {
+            return res.status(400).json({
+                success: false,
+                message: PASSWORD_ERROR
+            });
+        }
+
         try {
             const passwordHash = await bcrypt.hash(password, 10);
             fields.push("password_hash = ?");
@@ -416,10 +466,24 @@ const createStudent = async (req, res) => {
         });
     }
 
-    if (password.length < 6) {
+    if (!isValidName(normalizeName(firstName))) {
         return res.status(400).json({
             success: false,
-            message: "Password must be at least 6 characters"
+            message: FIRST_NAME_ERROR
+        });
+    }
+
+    if (!isValidName(normalizeName(lastName))) {
+        return res.status(400).json({
+            success: false,
+            message: LAST_NAME_ERROR
+        });
+    }
+
+    if (!isValidPassword(password)) {
+        return res.status(400).json({
+            success: false,
+            message: PASSWORD_ERROR
         });
     }
 
@@ -473,8 +537,8 @@ const createStudent = async (req, res) => {
             `,
             [
                 roleId,
-                firstName,
-                lastName,
+                normalizeName(firstName),
+                normalizeName(lastName),
                 email,
                 passwordHash,
                 phone || null,
@@ -600,13 +664,33 @@ const updateStudent = async (req, res) => {
         const userValues = [];
 
         if (firstName !== undefined) {
+            if (!isValidName(normalizeName(firstName))) {
+                await connection.rollback();
+                connection.release();
+
+                return res.status(400).json({
+                    success: false,
+                    message: FIRST_NAME_ERROR
+                });
+            }
+
             userFields.push("first_name = ?");
-            userValues.push(firstName);
+            userValues.push(normalizeName(firstName));
         }
 
         if (lastName !== undefined) {
+            if (!isValidName(normalizeName(lastName))) {
+                await connection.rollback();
+                connection.release();
+
+                return res.status(400).json({
+                    success: false,
+                    message: LAST_NAME_ERROR
+                });
+            }
+
             userFields.push("last_name = ?");
-            userValues.push(lastName);
+            userValues.push(normalizeName(lastName));
         }
 
         if (email !== undefined) {
@@ -625,6 +709,16 @@ const updateStudent = async (req, res) => {
         }
 
         if (password) {
+            if (!isValidPassword(password)) {
+                await connection.rollback();
+                connection.release();
+
+                return res.status(400).json({
+                    success: false,
+                    message: PASSWORD_ERROR
+                });
+            }
+
             const passwordHash = await bcrypt.hash(password, 10);
             userFields.push("password_hash = ?");
             userValues.push(passwordHash);

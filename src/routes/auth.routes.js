@@ -27,6 +27,7 @@ const router = express.Router();
 
 router.post(
   "/login",
+  authLimiter,
   login
 );
 
@@ -37,6 +38,7 @@ router.post(
 
 router.post(
   "/register",
+  authLimiter,
   register
 );
 
