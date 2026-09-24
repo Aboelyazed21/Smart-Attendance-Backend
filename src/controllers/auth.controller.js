@@ -34,21 +34,69 @@ async function getUserPermissions(userId) {
 }
 
 // ============================================================
+// PHONE + IDENTIFIER HELPERS
+// Shared by register/login so both sides enforce the same
+// rules. Leading "+" is preserved for international format.
+// ============================================================
+
+function normalizePhone(value) {
+  if (
+    value === undefined ||
+    value === null
+  ) {
+    return "";
+  }
+
+  let text = String(value).trim();
+
+  // Allow common separators, then keep digits + one leading "+".
+  text = text.replace(/[\s\-().]/g, "");
+
+  text = text.replace(/\+(?=.*\+)/g, "");
+
+  return text;
+}
+
+function isValidPhone(normalized) {
+  return /^\+?[0-9]{7,15}$/.test(
+    normalized || ""
+  );
+}
+
+function isEmailIdentifier(value) {
+  return String(value || "").includes("@");
+}
+
+// ============================================================
 // LOGIN
 // ============================================================
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
+    const body = req.body || {};
 
-    if (!email || !password) {
+    // Preferred new payload; legacy { email } still works.
+    const rawIdentifier = String(
+      body.identifier ??
+        body.email ??
+        ""
+    ).trim();
+
+    const { password } = body;
+
+    if (!rawIdentifier || !password) {
       return res.status(400).json({
-        message: "Email and password are required",
+        message:
+          "Email or University ID is required",
       });
     }
 
-    const [rows] = await pool.query(
-      `
+    const byEmail =
+      isEmailIdentifier(rawIdentifier);
+
+    // Same columns in both branches so the rest of the
+    // flow (status, password, JWT, response) is identical.
+    const userColumns = `
       SELECT
         u.id,
         u.first_name,
@@ -63,17 +111,45 @@ async function login(req, res) {
 
       INNER JOIN roles r
         ON r.id = u.role_id
+      `;
 
-      WHERE u.email = ?
+    let rows;
 
-      LIMIT 1
-      `,
-      [email]
-    );
+    if (byEmail) {
+      [rows] = await pool.query(
+        `
+        ${userColumns}
+
+        WHERE u.email = ?
+
+        LIMIT 1
+        `,
+        [rawIdentifier]
+      );
+    } else {
+      // Students only: resolve the University ID through
+      // student_profiles.user_id -> users.id. Lecturers and
+      // admins keep logging in with email.
+      [rows] = await pool.query(
+        `
+        ${userColumns}
+
+        INNER JOIN student_profiles sp
+          ON sp.user_id = u.id
+
+        WHERE sp.student_code = ?
+          OR sp.university_id = ?
+
+        LIMIT 1
+        `,
+        [rawIdentifier, rawIdentifier]
+      );
+    }
 
     if (!rows.length) {
       return res.status(401).json({
-        message: "Invalid email or password",
+        message:
+          "Invalid email/University ID or password",
       });
     }
 
@@ -92,7 +168,8 @@ async function login(req, res) {
 
     if (!valid) {
       return res.status(401).json({
-        message: "Invalid email or password",
+        message:
+          "Invalid email/University ID or password",
       });
     }
 
@@ -476,13 +553,16 @@ async function register(req, res) {
       password,
       role = "student",
       studentCode,
+      universityId,
+      phone,
     } = req.body;
 
     if (
       !firstName ||
       !lastName ||
       !email ||
-      !password
+      !password ||
+      !studentCode
     ) {
       return res.status(400).json({
         message:
@@ -490,7 +570,68 @@ async function register(req, res) {
       });
     }
 
-    // Public registration is only for students
+    const normalizedFirstName =
+      String(firstName).trim();
+
+    const normalizedLastName =
+      String(lastName).trim();
+
+    const normalizedEmail =
+      String(email).trim().toLowerCase();
+
+    const normalizedStudentCode =
+      String(studentCode).trim();
+
+    const normalizedUniversityId =
+      universityId === undefined ||
+      universityId === null ||
+      String(universityId).trim() === ""
+        ? null
+        : String(universityId).trim();
+
+    const normalizedPhone =
+      normalizePhone(phone);
+
+    if (
+      !normalizedFirstName ||
+      !normalizedLastName ||
+      !normalizedEmail ||
+      !normalizedStudentCode
+    ) {
+      return res.status(400).json({
+        message:
+          "Missing required fields",
+      });
+    }
+
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        normalizedEmail
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Please enter a valid email address",
+      });
+    }
+
+    // Phone is required for every new student registration.
+    // Existing accounts with NULL phone are left untouched.
+    if (!normalizedPhone) {
+      return res.status(400).json({
+        message: "Phone number is required",
+      });
+    }
+
+    if (!isValidPhone(normalizedPhone)) {
+      return res.status(400).json({
+        message:
+          "Please enter a valid phone number",
+      });
+    }
+
+    // Public registration is only for students.
+    // Role always comes from the database, never the client.
     if (role !== "student") {
       return res.status(403).json({
         message:
@@ -521,6 +662,61 @@ async function register(req, res) {
         10
       );
 
+    // Friendly duplicate protection before the insert.
+    // Database UNIQUE keys remain the final guard.
+    const [emailTaken] = await pool.query(
+      `
+      SELECT id
+      FROM users
+      WHERE email = ?
+      LIMIT 1
+      `,
+      [normalizedEmail]
+    );
+
+    if (emailTaken.length) {
+      return res.status(409).json({
+        message: "Email is already registered",
+      });
+    }
+
+    const [codeTaken] = await pool.query(
+      `
+      SELECT id
+      FROM student_profiles
+      WHERE student_code = ?
+      LIMIT 1
+      `,
+      [normalizedStudentCode]
+    );
+
+    if (codeTaken.length) {
+      return res.status(409).json({
+        message:
+          "University ID is already registered",
+      });
+    }
+
+    if (normalizedUniversityId) {
+      const [universityIdTaken] =
+        await pool.query(
+          `
+          SELECT id
+          FROM student_profiles
+          WHERE university_id = ?
+          LIMIT 1
+          `,
+          [normalizedUniversityId]
+        );
+
+      if (universityIdTaken.length) {
+        return res.status(409).json({
+          message:
+            "University ID is already registered",
+        });
+      }
+    }
+
     const connection =
       await pool.getConnection();
 
@@ -536,35 +732,37 @@ async function register(req, res) {
             first_name,
             last_name,
             email,
-            password_hash
+            password_hash,
+            phone
           )
-          VALUES (?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?)
           `,
           [
             roleRows[0].id,
-            firstName,
-            lastName,
-            email,
+            normalizedFirstName,
+            normalizedLastName,
+            normalizedEmail,
             passwordHash,
+            normalizedPhone,
           ]
         );
 
-      if (studentCode) {
-        await connection.query(
-          `
-          INSERT INTO student_profiles
-          (
-            user_id,
-            student_code
-          )
-          VALUES (?, ?)
-          `,
-          [
-            result.insertId,
-            studentCode,
-          ]
-        );
-      }
+      await connection.query(
+        `
+        INSERT INTO student_profiles
+        (
+          user_id,
+          student_code,
+          university_id
+        )
+        VALUES (?, ?, ?)
+        `,
+        [
+          result.insertId,
+          normalizedStudentCode,
+          normalizedUniversityId,
+        ]
+      );
 
       await connection.commit();
 
@@ -582,9 +780,23 @@ async function register(req, res) {
         error.code ===
         "ER_DUP_ENTRY"
       ) {
+        const duplicate = String(
+          error.message || ""
+        );
+
+        if (
+          duplicate.includes("student_code") ||
+          duplicate.includes("university_id")
+        ) {
+          return res.status(409).json({
+            message:
+              "University ID is already registered",
+          });
+        }
+
         return res.status(409).json({
           message:
-            "Email or student code already exists",
+            "Email is already registered",
         });
       }
 
@@ -645,9 +857,10 @@ async function forgotPassword(req, res) {
         ON sp.user_id = u.id
       WHERE u.email = ?
         OR sp.student_code = ?
+        OR sp.university_id = ?
       LIMIT 1
       `,
-      [rawIdentifier, rawIdentifier]
+      [rawIdentifier, rawIdentifier, rawIdentifier]
     );
 
     // Uniform response regardless of outcome.
@@ -815,4 +1028,7 @@ module.exports = {
   register,
   forgotPassword,
   resetPassword,
+  normalizePhone,
+  isValidPhone,
+  isEmailIdentifier,
 };
