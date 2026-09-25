@@ -61,7 +61,8 @@ const {
     importSections,
     importEnrollments,
     importRooms,
-    importTimetable
+    importTimetable,
+    importSectionStudents
 
 } = require("../controllers/import.controller");
 
@@ -276,6 +277,19 @@ router.post(
     requirePermission("user.manage"),
     uploadCSV.single("file"),
     importEnrollments
+);
+
+// ============================================================
+// IMPORT STUDENTS INTO ONE SECTION (CSV or Excel)
+// POST /api/admin/import/sections/:sectionId/students
+// ============================================================
+
+router.post(
+    "/import/sections/:sectionId/students",
+    authenticate,
+    requirePermission("user.manage"),
+    uploadCSV.single("file"),
+    importSectionStudents
 );
 
 // ============================================================

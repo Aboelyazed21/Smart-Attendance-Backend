@@ -202,6 +202,12 @@ async function ensureSchema(pool, logger = console) {
     logger.log(
       "Schema self-check: platform settings ready."
     );
+
+    await ensureNotificationsTable(pool);
+
+    logger.log(
+      "Schema self-check: notifications ready."
+    );
   } catch (error) {
     logger.log(
       "Schema self-check skipped: " +
@@ -209,6 +215,38 @@ async function ensureSchema(pool, logger = console) {
           "database is not ready yet.")
     );
   }
+}
+
+// ============================================================
+// NOTIFICATIONS
+// Unified in-app notification center for all roles.
+// user_id NULL + target_role set  => visible to every user
+// with that role. Direct rows always carry user_id.
+// ============================================================
+
+async function ensureNotificationsTable(pool) {
+  await pool.query(
+    `
+    CREATE TABLE IF NOT EXISTS \`notifications\` (
+      \`id\` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+      \`user_id\` bigint(20) UNSIGNED DEFAULT NULL,
+      \`target_role\` varchar(50) DEFAULT NULL,
+      \`type\` varchar(50) NOT NULL DEFAULT 'general',
+      \`title\` varchar(255) NOT NULL,
+      \`message\` text DEFAULT NULL,
+      \`link\` varchar(255) DEFAULT NULL,
+      \`is_read\` tinyint(1) NOT NULL DEFAULT 0,
+      \`created_at\` timestamp NOT NULL DEFAULT current_timestamp(),
+      PRIMARY KEY (\`id\`),
+      KEY \`idx_notifications_user\` (\`user_id\`, \`is_read\`),
+      KEY \`idx_notifications_role\` (\`target_role\`, \`is_read\`),
+      CONSTRAINT \`fk_notifications_user\`
+        FOREIGN KEY (\`user_id\`)
+        REFERENCES \`users\` (\`id\`)
+        ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `
+  );
 }
 
 module.exports = {

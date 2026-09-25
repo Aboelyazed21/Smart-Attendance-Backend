@@ -1,4 +1,5 @@
 const { pool } = require("../config/db");
+const { notify } = require("./notifications.controller");
 
 // ============================================================
 // CREATE CORRECTION REQUEST
@@ -53,6 +54,48 @@ async function create(req, res) {
       evidenceUrl || null
     ]
   );
+
+  // Notify the section lecturer (direct) + all admins
+  // (role broadcast) about the new correction request.
+  try {
+    if (attendanceEventId) {
+      const [eventRows] = await pool.query(
+        `
+          SELECT sec.lecturer_id, c.course_code, sec.section_name
+          FROM attendance_events ae
+          INNER JOIN attendance_sessions ses
+            ON ses.id = ae.session_id
+          INNER JOIN sections sec
+            ON sec.id = ses.section_id
+          INNER JOIN courses c
+            ON c.id = sec.course_id
+          WHERE ae.id = ?
+          LIMIT 1
+        `,
+        [attendanceEventId]
+      );
+
+      if (eventRows.length && eventRows[0].lecturer_id) {
+        await notify({
+          userId: Number(eventRows[0].lecturer_id),
+          type: "correction",
+          title: "New correction request",
+          message: `A student requested ${requestedStatus} for ${eventRows[0].course_code || ""} ${eventRows[0].section_name || ""}`.trim(),
+          link: "/lecturer/attendance",
+        });
+      }
+    }
+
+    await notify({
+      targetRole: "admin",
+      type: "correction",
+      title: "New correction request",
+      message: `A student submitted a correction request (${requestedStatus}).`,
+      link: "/admin/attendance",
+    });
+  } catch (notifyError) {
+    console.error("Correction notify error:", notifyError.message);
+  }
 
   return res.status(201).json({
     id: result.insertId,
@@ -198,6 +241,36 @@ async function review(req, res) {
     }
 
     await connection.commit();
+
+    // Notify the student about the review decision.
+    try {
+      const [studentUserRows] = await pool.query(
+        `
+          SELECT sp.user_id
+          FROM correction_requests cr
+          INNER JOIN student_profiles sp
+            ON sp.id = cr.student_id
+          WHERE cr.id = ?
+          LIMIT 1
+        `,
+        [req.params.id]
+      );
+
+      if (studentUserRows.length) {
+        await notify({
+          userId: Number(studentUserRows[0].user_id),
+          type: "correction",
+          title: `Correction request ${status}`,
+          message:
+            status === "approved"
+              ? "Your correction request was approved and your attendance was updated."
+              : `Your correction request was rejected.${reviewerComment ? ` Reviewer note: ${reviewerComment}` : ""}`,
+          link: "/student/correction-requests",
+        });
+      }
+    } catch (notifyError) {
+      console.error("Review notify error:", notifyError.message);
+    }
 
     return res.json({
       message: `Correction ${status}`
@@ -495,6 +568,14 @@ async function updateAttendance(req, res) {
       });
     }
 
+    await notify({
+      userId: Number(student.user_id),
+      type: "correction",
+      title: "Your attendance was updated",
+      message: `Your attendance for session #${numericSessionId} was set to ${status} by your lecturer.`,
+      link: "/student/attendance",
+    });
+
     return res.json({
       message:
         "Attendance corrected successfully",
@@ -535,6 +616,14 @@ async function updateAttendance(req, res) {
       correctionReason
     ]
   );
+
+  await notify({
+    userId: Number(student.user_id),
+    type: "correction",
+    title: "Your attendance was updated",
+    message: `Your attendance for session #${numericSessionId} was set to ${status} by your lecturer.`,
+    link: "/student/attendance",
+  });
 
   return res.status(201).json({
     message:

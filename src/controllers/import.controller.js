@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
+const XLSX = require("xlsx");
 
 const db = require("../config/db");
 
@@ -150,6 +151,45 @@ function cleanupUploadedFile(file) {
             error.message
         );
     }
+}
+
+/*
+ * Read an uploaded spreadsheet file (CSV or Excel).
+ * Excel: first worksheet is used, first row is the header.
+ * Returns normalized row objects (same shape as parseCSV).
+ */
+function readUploadedRows(file) {
+    if (!file || !file.path) {
+        throw new Error("A CSV or Excel file is required");
+    }
+
+    const extension = path
+        .extname(file.originalname || "")
+        .toLowerCase();
+
+    if (extension === ".xlsx" || extension === ".xls") {
+        const filePath = path.resolve(file.path);
+
+        if (!fs.existsSync(filePath)) {
+            throw new Error("Uploaded file was not found");
+        }
+
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0];
+
+        if (!sheetName) {
+            return [];
+        }
+
+        const rawRows = XLSX.utils.sheet_to_json(
+            workbook.Sheets[sheetName],
+            { defval: "" }
+        );
+
+        return rawRows.map((row) => normalizeRow(row));
+    }
+
+    return readUploadedCSV(file);
 }
 
 function query(sql, params = []) {
@@ -1538,6 +1578,404 @@ async function importTimetable(req, res) {
 }
 
 // ============================================================
+// IMPORT STUDENTS INTO ONE SECTION (CSV or Excel)
+//
+// POST /api/admin/import/sections/:sectionId/students
+// POST /api/lecturer/enrollment/sections/:sectionId/students/upload
+//
+// Body: multipart file field "file" (.csv / .xlsx / .xls)
+// Columns per row:
+//   first_name, last_name, student_code (required)
+//   email, phone, university_id, department, level,
+//   academic_year, password (optional, default = student_code)
+//
+// Missing students are created, existing ones are updated,
+// then every valid row is enrolled (or reactivated) in the
+// target section.
+// Admin  => any section.
+// Lecturer => only sections they own.
+// ============================================================
+
+async function importSectionStudents(req, res) {
+    let created = 0;
+    let enrolled = 0;
+    let skipped = 0;
+    const errors = [];
+
+    try {
+        const sectionId = Number(req.params.sectionId);
+
+        if (!Number.isInteger(sectionId) || sectionId <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid section id",
+            });
+        }
+
+        const currentUserId =
+            req.user?.id ?? req.user?.userId ?? null;
+
+        const currentRole = String(
+            req.user?.role ?? req.user?.role_name ?? ""
+        )
+            .toLowerCase()
+            .trim();
+
+        const isAdmin =
+            currentRole === "admin" ||
+            currentRole === "administrator";
+
+        // ------------------------------------------------------
+        // Verify section + ownership
+        // ------------------------------------------------------
+
+        const sectionRows = await query(
+            `
+            SELECT
+                s.id,
+                s.section_name,
+                s.lecturer_id,
+                c.course_code,
+                c.course_name
+            FROM sections s
+            INNER JOIN courses c
+                ON c.id = s.course_id
+            WHERE s.id = ?
+            LIMIT 1
+            `,
+            [sectionId]
+        );
+
+        if (sectionRows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Section not found",
+            });
+        }
+
+        const section = sectionRows[0];
+
+        if (
+            !isAdmin &&
+            Number(section.lecturer_id) !==
+                Number(currentUserId)
+        ) {
+            return res.status(403).json({
+                success: false,
+                message:
+                    "You are not allowed to manage this section",
+            });
+        }
+
+        // ------------------------------------------------------
+        // Read file (CSV or Excel)
+        // ------------------------------------------------------
+
+        const rows = readUploadedRows(req.file);
+
+        if (rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "The file is empty",
+            });
+        }
+
+        const studentRole = await query(
+            `
+            SELECT id
+            FROM roles
+            WHERE name = 'student'
+            LIMIT 1
+            `
+        );
+
+        if (studentRole.length === 0) {
+            return res.status(500).json({
+                success: false,
+                message: "Student role was not found",
+            });
+        }
+
+        const studentRoleId = studentRole[0].id;
+
+        // ------------------------------------------------------
+        // Process rows
+        // ------------------------------------------------------
+
+        for (let index = 0; index < rows.length; index++) {
+            const row = rows[index];
+            const line = index + 2;
+
+            const firstName = firstValue(row, [
+                "first_name",
+                "firstname",
+                "first",
+            ]);
+
+            const lastName = firstValue(row, [
+                "last_name",
+                "lastname",
+                "last",
+            ]);
+
+            const studentCode = firstValue(row, [
+                "student_code",
+                "studentcode",
+                "code",
+            ]);
+
+            const email = firstValue(row, [
+                "email",
+                "student_email",
+            ]);
+
+            const phone = firstValue(row, [
+                "phone",
+                "phone_number",
+                "mobile",
+            ]);
+
+            const universityId = firstValue(row, [
+                "university_id",
+                "universityid",
+            ]);
+
+            const department = firstValue(row, [
+                "department",
+            ]);
+
+            const level = toNumber(
+                firstValue(row, ["level", "year"])
+            );
+
+            const academicYear = firstValue(row, [
+                "academic_year",
+                "academicyear",
+            ]);
+
+            const password = firstValue(row, [
+                "password",
+            ]);
+
+            if (!firstName || !lastName || !studentCode) {
+                skipped++;
+
+                errors.push({
+                    line,
+                    message:
+                        "first_name, last_name and student_code are required",
+                });
+
+                continue;
+            }
+
+            try {
+                // ----------------------------------------------
+                // Find or create the student
+                // ----------------------------------------------
+
+                const existingProfile = await query(
+                    `
+                    SELECT sp.id, sp.user_id
+                    FROM student_profiles sp
+                    WHERE sp.student_code = ?
+                    LIMIT 1
+                    `,
+                    [studentCode]
+                );
+
+                let studentId;
+
+                if (existingProfile.length > 0) {
+                    studentId = existingProfile[0].id;
+
+                    await query(
+                        `
+                        UPDATE users
+                        SET first_name = ?,
+                            last_name = ?,
+                            phone = ?,
+                            status = 'active'
+                        WHERE id = ?
+                        `,
+                        [
+                            firstName,
+                            lastName,
+                            phone,
+                            existingProfile[0].user_id,
+                        ]
+                    );
+                } else {
+                    let existingUser = [];
+
+                    if (email) {
+                        existingUser = await query(
+                            `
+                            SELECT id
+                            FROM users
+                            WHERE email = ?
+                            LIMIT 1
+                            `,
+                            [email]
+                        );
+                    }
+
+                    let userId;
+
+                    if (existingUser.length > 0) {
+                        userId = existingUser[0].id;
+
+                        await query(
+                            `
+                            UPDATE users
+                            SET role_id = ?,
+                                first_name = ?,
+                                last_name = ?,
+                                phone = ?,
+                                status = 'active'
+                            WHERE id = ?
+                            `,
+                            [
+                                studentRoleId,
+                                firstName,
+                                lastName,
+                                phone,
+                                userId,
+                            ]
+                        );
+                    } else {
+                        const passwordHash =
+                            await bcrypt.hash(
+                                password || studentCode,
+                                10
+                            );
+
+                        const userResult = await query(
+                            `
+                            INSERT INTO users
+                            (
+                                role_id,
+                                first_name,
+                                last_name,
+                                email,
+                                password_hash,
+                                phone,
+                                status
+                            )
+                            VALUES (?, ?, ?, ?, ?, ?, 'active')
+                            `,
+                            [
+                                studentRoleId,
+                                firstName,
+                                lastName,
+                                email || null,
+                                passwordHash,
+                                phone,
+                            ]
+                        );
+
+                        userId = userResult.insertId;
+                    }
+
+                    const profileResult = await query(
+                        `
+                        INSERT INTO student_profiles
+                        (
+                            user_id,
+                            student_code,
+                            university_id,
+                            department,
+                            level,
+                            academic_year
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        `,
+                        [
+                            userId,
+                            studentCode,
+                            universityId,
+                            department,
+                            level,
+                            academicYear,
+                        ]
+                    );
+
+                    studentId = profileResult.insertId;
+                    created++;
+                }
+
+                // ----------------------------------------------
+                // Enroll (or reactivate) in the section
+                // ----------------------------------------------
+
+                const existing = await query(
+                    `
+                    SELECT id, status
+                    FROM enrollments
+                    WHERE student_id = ?
+                      AND section_id = ?
+                    LIMIT 1
+                    `,
+                    [studentId, sectionId]
+                );
+
+                if (existing.length > 0) {
+                    if (existing[0].status !== "active") {
+                        await query(
+                            `
+                            UPDATE enrollments
+                            SET status = 'active'
+                            WHERE id = ?
+                            `,
+                            [existing[0].id]
+                        );
+
+                        enrolled++;
+                    }
+                } else {
+                    await query(
+                        `
+                        INSERT INTO enrollments
+                            (student_id, section_id, status)
+                        VALUES (?, ?, 'active')
+                        `,
+                        [studentId, sectionId]
+                    );
+
+                    enrolled++;
+                }
+            } catch (error) {
+                skipped++;
+
+                errors.push({
+                    line,
+                    message: error.message,
+                });
+            }
+        }
+
+        return res.json({
+            success: true,
+            message: `Upload finished: ${enrolled} enrolled, ${created} new students, ${skipped} skipped`,
+            sectionId,
+            section: {
+                courseCode: section.course_code,
+                courseName: section.course_name,
+                sectionName: section.section_name,
+            },
+            created,
+            enrolled,
+            skipped,
+            errors: errors.slice(0, 50),
+        });
+    } catch (error) {
+        return errorResponse(res, error);
+    } finally {
+        cleanupUploadedFile(req.file);
+    }
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 
@@ -1548,4 +1986,5 @@ module.exports = {
     importEnrollments,
     importRooms,
     importTimetable,
+    importSectionStudents,
 };

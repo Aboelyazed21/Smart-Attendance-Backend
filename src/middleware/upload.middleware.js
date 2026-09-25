@@ -62,11 +62,13 @@ function fileFilter(req, file, cb) {
 
   const allowedExtensions = [
     ".csv",
+    ".xlsx",
+    ".xls",
   ];
 
   if (!allowedExtensions.includes(extension)) {
     return cb(
-      new Error("Only CSV files are allowed")
+      new Error("Only CSV or Excel (.xlsx, .xls) files are allowed")
     );
   }
 
@@ -85,7 +87,7 @@ const uploadCSV = multer({
   fileFilter,
 
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    fileSize: 10 * 1024 * 1024,
   },
 });
 

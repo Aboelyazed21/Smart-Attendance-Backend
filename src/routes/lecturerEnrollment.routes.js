@@ -6,6 +6,14 @@ const lecturerEnrollmentController = require(
   "../controllers/lecturerEnrollment.controller"
 );
 
+const {
+  importSectionStudents,
+} = require("../controllers/import.controller");
+
+const {
+  uploadCSV,
+} = require("../middleware/upload.middleware");
+
 const router = express.Router();
 
 /* ============================================================
@@ -63,6 +71,22 @@ router.delete(
   "/:enrollmentId",
   authenticate,
   lecturerEnrollmentController.removeStudentFromSection
+);
+
+/*
+  Upload students (CSV or Excel) into the lecturer's own
+  section. Missing students are created automatically.
+
+  POST
+  /api/lecturer/enrollment/sections/:sectionId/students/upload
+
+  Body: multipart file field "file"
+*/
+router.post(
+  "/sections/:sectionId/students/upload",
+  authenticate,
+  uploadCSV.single("file"),
+  importSectionStudents
 );
 
 module.exports = router;

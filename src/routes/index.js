@@ -40,6 +40,8 @@ const settingsRoutes = require("./settings.routes");
 
 const correctionRoutes = require("./correction.routes");
 
+const notificationRoutes = require("./notification.routes");
+
 // ============================================================
 // AUTH
 // ============================================================
@@ -169,6 +171,15 @@ router.use(
 
 router.use(
   correctionRoutes
+);
+
+// ============================================================
+// NOTIFICATION CENTER
+// ============================================================
+
+router.use(
+  "/notifications",
+  notificationRoutes
 );
 
 // ============================================================
