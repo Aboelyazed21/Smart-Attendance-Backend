@@ -302,6 +302,12 @@ function toMinutes(value) {
 
 // ============================================================
 // LIST ATTENDANCE
+//
+// COALESCE(absent):
+// لو الطالب موجود في enrollments لكن مفيش له
+// attendance_event => يعتبر Absent بدل NULL.
+// لو sessionId متبعت => نرجع كل الطلاب المسجلين
+// في السكشن مع COALESCE. غير كده السلوك القديم.
 // ============================================================
 
 async function list(req, res) {
@@ -312,16 +318,105 @@ async function list(req, res) {
       status,
     } = req.query;
 
-    const conditions = [];
-    const params = [];
+    // --------------------------------------------------------
+    // CASE 1: sessionId موجود => Full roster + COALESCE
+    // --------------------------------------------------------
 
     if (sessionId) {
-      conditions.push(
-        "ae.session_id = ?"
+      const conditions = ["ses.id = ?"];
+      const params = [sessionId];
+
+      if (studentId) {
+        conditions.push("sp.id = ?");
+        params.push(studentId);
+      }
+
+      if (status) {
+        const normStatus = String(status).trim().toLowerCase();
+
+        if (normStatus === "absent") {
+          conditions.push(
+            "(ae.status = 'absent' OR ae.id IS NULL)"
+          );
+        } else {
+          conditions.push(
+            "COALESCE(ae.status, 'absent') = ?"
+          );
+          params.push(String(status).trim());
+        }
+      }
+
+      const where = `WHERE ${conditions.join(" AND ")}`;
+
+      const [rows] = await pool.query(
+        `
+        SELECT
+          ae.id,
+          ae.session_id,
+          ae.student_id,
+          ae.source,
+          ae.scanned_at,
+          ae.validation_status,
+
+          COALESCE(
+            ae.status,
+            'absent'
+          ) AS status,
+
+          COALESCE(
+            ae.status,
+            'absent'
+          ) AS attendance_status,
+
+          sp.student_code,
+          CONCAT(
+            u.first_name,
+            ' ',
+            u.last_name
+          ) AS student_name,
+          u.email,
+          c.course_code,
+          c.course_name,
+          sec.section_name,
+          ses.session_date
+        FROM attendance_sessions ses
+
+        INNER JOIN sections sec
+          ON sec.id = ses.section_id
+
+        INNER JOIN courses c
+          ON c.id = sec.course_id
+
+        INNER JOIN enrollments e
+          ON e.section_id = ses.section_id
+          AND e.status = 'active'
+
+        INNER JOIN student_profiles sp
+          ON sp.id = e.student_id
+
+        INNER JOIN users u
+          ON u.id = sp.user_id
+
+        LEFT JOIN attendance_events ae
+          ON ae.session_id = ses.id
+          AND ae.student_id = sp.id
+
+        ${where}
+
+        ORDER BY student_name ASC
+      `,
+        params
       );
 
-      params.push(sessionId);
+      return res.json(rows);
     }
+
+    // --------------------------------------------------------
+    // CASE 2: بدون sessionId => السلوك القديم + COALESCE
+    // --------------------------------------------------------
+
+    const conditions = [];
+    const params = [];
 
     if (studentId) {
       conditions.push(
@@ -333,10 +428,10 @@ async function list(req, res) {
 
     if (status) {
       conditions.push(
-        "ae.status = ?"
+        "COALESCE(ae.status, 'absent') = ?"
       );
 
-      params.push(status);
+      params.push(String(status).trim());
     }
 
     const where =
@@ -348,6 +443,10 @@ async function list(req, res) {
       `
         SELECT
           ae.*,
+          COALESCE(
+            ae.status,
+            'absent'
+          ) AS attendance_status,
           sp.student_code,
           CONCAT(
             u.first_name,
@@ -398,6 +497,10 @@ async function list(req, res) {
 
 // ============================================================
 // MY ATTENDANCE
+//
+// COALESCE(absent):
+// كل Sessions الخاصة بالسكاشن المسجل فيها الطالب
+// ترجع، ولو مفيش attendance_events => absent بدل NULL.
 // ============================================================
 
 async function myAttendance(req, res) {
@@ -431,17 +534,36 @@ async function myAttendance(req, res) {
       `
         SELECT
           ae.id,
-          ae.status,
+
+          -- COALESCE(absent) للسيشن المقفولة فقط
+          -- عشان Active/Scheduled تفضل Not recorded ويقدر يعمل Scan
+          CASE
+            WHEN ae.status IS NOT NULL THEN ae.status
+            WHEN ses.status = 'closed' THEN 'absent'
+            ELSE NULL
+          END AS status,
+
+          CASE
+            WHEN ae.status IS NOT NULL THEN ae.status
+            WHEN ses.status = 'closed' THEN 'absent'
+            ELSE NULL
+          END AS attendance_status,
+
           ae.source,
           ae.scanned_at,
+          ae.validation_status,
           c.course_code,
           c.course_name,
           sec.section_name,
-          ses.session_date
-        FROM attendance_events ae
+          ses.id AS session_id,
+          ses.session_date,
+          ses.scheduled_start,
+          ses.scheduled_end,
+          ses.status AS session_status
+        FROM enrollments e
 
         INNER JOIN attendance_sessions ses
-          ON ses.id = ae.session_id
+          ON ses.section_id = e.section_id
 
         INNER JOIN sections sec
           ON sec.id = ses.section_id
@@ -449,11 +571,16 @@ async function myAttendance(req, res) {
         INNER JOIN courses c
           ON c.id = sec.course_id
 
-        WHERE ae.student_id = ?
+        LEFT JOIN attendance_events ae
+          ON ae.session_id = ses.id
+          AND ae.student_id = e.student_id
+
+        WHERE e.student_id = ?
+          AND e.status = 'active'
 
         ORDER BY
           ses.session_date DESC,
-          ae.id DESC
+          ses.id DESC
       `,
       [studentId]
     );

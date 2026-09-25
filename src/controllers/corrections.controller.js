@@ -94,7 +94,7 @@ async function myRequests(req, res) {
     `
       SELECT
         cr.*,
-        ae.status AS attendance_status,
+        COALESCE(ae.status, 'absent') AS attendance_status,
         c.course_code,
         c.course_name,
         sec.section_name,

@@ -102,15 +102,27 @@ async function attendanceSummary(req, res) {
 
     // ========================================================
     // STATUS FILTER
-    // ========================================================
+    // "absent" includes implicit absences:
+    // enrolled student with no attendance_events row
+    // (ae.id IS NULL) is treated as absent via
+    // COALESCE(ae.status, 'absent').
 
     if (
       status !== undefined &&
       status !== null &&
       String(status).trim() !== ""
     ) {
-      conditions.push("ae.status = ?");
-      params.push(String(status).trim());
+      const normStatus =
+        String(status).trim().toLowerCase();
+
+      if (normStatus === "absent") {
+        conditions.push(
+          "(ae.status = 'absent' OR ae.id IS NULL)"
+        );
+      } else {
+        conditions.push("ae.status = ?");
+        params.push(String(status).trim());
+      }
     }
 
     // ========================================================
@@ -162,6 +174,8 @@ async function attendanceSummary(req, res) {
             u.last_name
           ) AS student_name,
 
+          u.email,
+
           c.id AS course_id,
           c.course_code,
           c.course_name,
@@ -173,18 +187,23 @@ async function attendanceSummary(req, res) {
           ses.session_date,
           ses.scheduled_start,
           ses.scheduled_end,
+          ses.status AS session_status,
 
-          ae.status AS attendance_status,
-          ae.status,
+          COALESCE(
+            ae.status,
+            'absent'
+          ) AS attendance_status,
+
+          COALESCE(
+            ae.status,
+            'absent'
+          ) AS status,
 
           ae.source,
           ae.scanned_at,
           ae.validation_status
 
-        FROM attendance_events ae
-
-        INNER JOIN attendance_sessions ses
-          ON ses.id = ae.session_id
+        FROM attendance_sessions ses
 
         INNER JOIN sections sec
           ON sec.id = ses.section_id
@@ -192,11 +211,19 @@ async function attendanceSummary(req, res) {
         INNER JOIN courses c
           ON c.id = sec.course_id
 
+        INNER JOIN enrollments e
+          ON e.section_id = ses.section_id
+          AND e.status = 'active'
+
         INNER JOIN student_profiles sp
-          ON sp.id = ae.student_id
+          ON sp.id = e.student_id
 
         INNER JOIN users u
           ON u.id = sp.user_id
+
+        LEFT JOIN attendance_events ae
+          ON ae.session_id = ses.id
+          AND ae.student_id = sp.id
 
         ${whereClause}
 
@@ -330,6 +357,13 @@ async function courseSummary(req, res) {
               WHEN ae.validation_status = 'accepted'
               AND ae.status = 'absent'
               THEN ae.id
+              -- COALESCE(absent): enrolled + session موجودة
+              -- لكن مفيش attendance_event => Absent
+              WHEN ae.id IS NULL
+              AND e.status = 'active'
+              AND e.student_id IS NOT NULL
+              AND ses.id IS NOT NULL
+              THEN CONCAT(e.student_id, '-', ses.id)
             END
           ) AS absent_records
 

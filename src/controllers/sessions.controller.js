@@ -192,7 +192,15 @@ async function mySessions(req, res) {
         r.room_name,
 
         ae.id AS attendance_id,
-        ae.status AS attendance_status,
+        -- COALESCE(absent):
+        -- enrolled لكن مفيش attendance_event + السيشن مقفولة => Absent
+        -- السيشن scheduled/active ولسه مفيش سجل => NULL (Not recorded)
+        -- عشان زرار Scan يفضل شغال
+        CASE
+          WHEN ae.status IS NOT NULL THEN ae.status
+          WHEN s.status = 'closed' THEN 'absent'
+          ELSE NULL
+        END AS attendance_status,
         ae.scanned_at,
         ae.source
 
