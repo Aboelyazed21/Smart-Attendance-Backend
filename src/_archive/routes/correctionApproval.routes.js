@@ -6,30 +6,43 @@ const router = express.Router();
 // Middleware
 // ==========================================
 
-const { authenticate } = require("../middleware/auth");
+const { authenticate } = require("../../middleware/auth");
 
 const {
   requirePermission,
-} = require("../middleware/permission.middleware");
+} = require("../../middleware/permission.middleware");
 
 // ==========================================
 // Controller
 // ==========================================
 
 const {
-  list,
-} = require("../controllers/corrections.controller");
+  review,
+} = require("../../controllers/corrections.controller");
 
 // ==========================================
-// GET CORRECTION REQUESTS
-// GET /api/correction-review/pending
+// APPROVE / REJECT CORRECTION REQUEST
+// PATCH /api/correction-review/:id/approve
 // ==========================================
 
-router.get(
-  "/pending",
+router.patch(
+  "/:id/approve",
   authenticate,
   requirePermission("correction.review"),
-  list
+  async (req, res, next) => {
+    try {
+      req.body = {
+        ...(req.body || {}),
+        status: "approved",
+      };
+
+      req.params.id = req.params.id;
+
+      return await review(req, res);
+    } catch (error) {
+      next(error);
+    }
+  }
 );
 
 // ==========================================

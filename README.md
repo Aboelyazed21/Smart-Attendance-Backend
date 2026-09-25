@@ -35,22 +35,21 @@ no secrets in the spec).
 ## Important
 The React frontend must call this API. It must NOT connect directly to MySQL.
 
-## Main API groups
-- `/api/auth`
+## Main API groups (live; full list at `/api-docs`)
+- `/api/login`, `/api/register`, `/api/auth/*`
 - `/api/users`
-- `/api/students`
-- `/api/staff`
+- `/api/students`, `/api/student/attendance`
 - `/api/courses`
 - `/api/sections`
-- `/api/enrollments`
 - `/api/rooms`
 - `/api/timetable`
 - `/api/sessions`
 - `/api/attendance`
 - `/api/corrections`
 - `/api/reports`
-- `/api/audit`
-- `/api/notifications`
+- `/api/lecturer/*`
+- `/api/admin/*` (users, students, courses, imports, weekly reports, settings)
+- `/api/settings/public` (no auth)
 
 ## Authentication
 Login returns a JWT. Send it on protected requests:

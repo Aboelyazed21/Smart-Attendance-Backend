@@ -1,24 +1,22 @@
 const express = require("express");
 
-const {
-  authenticate
-} = require("../middleware/auth");
+const { authenticate } = require("../../middleware/auth");
 
 const {
-  chat
-} = require("../controllers/chatbot.controller");
+  create,
+} = require("../../controllers/corrections.controller");
 
 const router = express.Router();
 
 // ==========================================
-// Student Chatbot
-// POST /api/chatbot
+// Create Student Correction Request
+// POST /api/correction-request/
 // ==========================================
 
 router.post(
   "/",
   authenticate,
-  chat
+  create
 );
 
 module.exports = router;

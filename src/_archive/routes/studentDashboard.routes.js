@@ -6,7 +6,7 @@ const router = express.Router();
 // Middleware
 // ==========================================
 
-const { authenticate } = require("../middleware/auth");
+const { authenticate } = require("../../middleware/auth");
 
 // ==========================================
 // Controller
@@ -14,7 +14,7 @@ const { authenticate } = require("../middleware/auth");
 
 const {
   studentDashboard,
-} = require("../controllers/reports.controller");
+} = require("../../controllers/reports.controller");
 
 // ==========================================
 // Student - Dashboard Statistics

@@ -6,11 +6,11 @@ const router = express.Router();
 // Middleware
 // ==========================================
 
-const { authenticate } = require("../middleware/auth");
+const { authenticate } = require("../../middleware/auth");
 
 const {
   requirePermission,
-} = require("../middleware/permission.middleware");
+} = require("../../middleware/permission.middleware");
 
 // ==========================================
 // Controller
@@ -18,7 +18,7 @@ const {
 
 const {
   review,
-} = require("../controllers/corrections.controller");
+} = require("../../controllers/corrections.controller");
 
 // ==========================================
 // REJECT CORRECTION REQUEST

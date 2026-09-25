@@ -1,4 +1,4 @@
-const { pool } = require("../config/db");
+const { pool } = require("../../config/db");
 
 async function mine(req, res) {
   const [rows] = await pool.query(`

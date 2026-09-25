@@ -8,12 +8,12 @@ const router = express.Router();
 
 const {
   authenticate
-} = require("../middleware/auth");
+} = require("../../middleware/auth");
 
 const {
   requirePermission,
   requireRole
-} = require("../middleware/permission.middleware");
+} = require("../../middleware/permission.middleware");
 
 // ============================================================
 // Controller
