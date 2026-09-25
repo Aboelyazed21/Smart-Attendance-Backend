@@ -5,6 +5,8 @@ const { notFound, errorHandler } = require("./middleware/error");
 const {
   maintenanceGuard,
 } = require("./middleware/maintenance");
+const swaggerUi = require("swagger-ui-express");
+const openapiSpec = require("./docs/openapi");
 
 const app = express();
 
@@ -102,6 +104,26 @@ app.get("/health", (req, res) => {
     service: "smart-attendance-backend",
   });
 });
+
+/*
+|--------------------------------------------------------------------------
+| API Documentation (Swagger UI + raw OpenAPI JSON)
+| Public by design: the spec contains no secrets, only
+| endpoint shapes. Reachable during maintenance mode.
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api-docs.json", (req, res) => {
+  res.json(openapiSpec);
+});
+
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec, {
+    customSiteTitle: "Smart Attendance API Docs",
+  })
+);
 
 /*
 |--------------------------------------------------------------------------

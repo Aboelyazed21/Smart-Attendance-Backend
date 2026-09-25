@@ -20,6 +20,18 @@ Windows CMD uses `copy`; PowerShell can use `Copy-Item .env.example .env`.
 Default API:
 `http://localhost:5000/api`
 
+## API Documentation (Swagger)
+
+Interactive docs for every live endpoint:
+
+- Swagger UI: `http://localhost:5000/api-docs`
+- Raw OpenAPI JSON: `http://localhost:5000/api-docs.json`
+
+To test protected endpoints: `POST /api/login` → Authorize →
+paste `Bearer <token>`. The spec is verified by
+`node scripts/verify-swagger.js` (every live route documented,
+no secrets in the spec).
+
 ## Important
 The React frontend must call this API. It must NOT connect directly to MySQL.
 
