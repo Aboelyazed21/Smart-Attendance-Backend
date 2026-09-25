@@ -198,7 +198,7 @@ async function mySessions(req, res) {
         -- عشان زرار Scan يفضل شغال
         CASE
           WHEN ae.status IS NOT NULL THEN ae.status
-          WHEN s.status = 'closed' THEN 'absent'
+          WHEN s.status IN ('closed', 'cancelled') THEN 'absent'
           ELSE NULL
         END AS attendance_status,
         ae.scanned_at,

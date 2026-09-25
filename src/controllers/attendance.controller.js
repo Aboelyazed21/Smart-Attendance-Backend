@@ -539,13 +539,13 @@ async function myAttendance(req, res) {
           -- عشان Active/Scheduled تفضل Not recorded ويقدر يعمل Scan
           CASE
             WHEN ae.status IS NOT NULL THEN ae.status
-            WHEN ses.status = 'closed' THEN 'absent'
+            WHEN ses.status IN ('closed', 'cancelled') THEN 'absent'
             ELSE NULL
           END AS status,
 
           CASE
             WHEN ae.status IS NOT NULL THEN ae.status
-            WHEN ses.status = 'closed' THEN 'absent'
+            WHEN ses.status IN ('closed', 'cancelled') THEN 'absent'
             ELSE NULL
           END AS attendance_status,
 
