@@ -11,6 +11,9 @@ const bcrypt = require("bcryptjs");
 const {
   startWeeklyAttendanceJob,
 } = require("./jobs/weeklyAttendance.job");
+const {
+  startWeeklyEmailJob,
+} = require("./jobs/weeklyEmail.job");
 
 const PORT = Number(process.env.PORT || 5000);
 
@@ -127,6 +130,17 @@ async function start() {
     } catch (jobError) {
       console.error(
         "Could not start weekly summary job:",
+        jobError.message
+      );
+    }
+
+    // Weekly email reports (Resend) run inside try/catch
+    // and skip gracefully when Resend is not configured.
+    try {
+      startWeeklyEmailJob();
+    } catch (jobError) {
+      console.error(
+        "Could not start weekly email job:",
         jobError.message
       );
     }

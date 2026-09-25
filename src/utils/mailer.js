@@ -1,5 +1,9 @@
 const crypto = require("crypto");
 
+const {
+  getPlatformName,
+} = require("./platformSettings");
+
 // ============================================================
 // MAILER (nodemailer abstraction)
 //
@@ -74,30 +78,41 @@ async function sendPasswordResetEmail({
   expiresMinutes,
 }) {
   const resetLink = buildResetLink(token);
+
+  let brand = "Attendify";
+
+  try {
+    brand = await getPlatformName();
+  } catch {
+    // Database unavailable: keep the default brand so
+    // password recovery still works.
+  }
+
+  const safeBrand = escapeHtml(brand);
   const safeName = escapeHtml(firstName || "there");
 
-  const subject = "Reset your Attendify password";
+  const subject = `Reset your ${brand} password`;
 
   const text =
     `Hello ${firstName || "there"},\n\n` +
-    `You requested a password reset for your Attendify account.\n\n` +
+    `You requested a password reset for your ${brand} account.\n\n` +
     `Reset your password using this link (valid for ${expiresMinutes} minutes):\n` +
     `${resetLink}\n\n` +
     `If you did not request this, ignore this message. ` +
     `Never share this link with anyone.\n\n` +
-    `Attendify - Smart Attendance System`;
+    `${brand} - Smart Attendance System`;
 
   const html = `
     <div style="font-family: Arial, Helvetica, sans-serif; max-width: 560px; margin: 0 auto; color: #1e293b;">
       <div style="background: #0f2851; border-radius: 12px 12px 0 0; padding: 22px 26px;">
-        <div style="color: #ffffff; font-size: 20px; font-weight: 800;">Attendify</div>
+        <div style="color: #ffffff; font-size: 20px; font-weight: 800;">${safeBrand}</div>
         <div style="color: rgba(255,255,255,0.72); font-size: 11px; letter-spacing: 1.5px;">SMART ATTENDANCE SYSTEM</div>
       </div>
       <div style="border: 1px solid #e2e8f0; border-top: 0; border-radius: 0 0 12px 12px; padding: 26px;">
         <h2 style="margin: 0 0 10px; font-size: 18px;">Reset your password</h2>
         <p style="margin: 0 0 8px; font-size: 14px; color: #475569;">Hello ${safeName},</p>
         <p style="margin: 0 0 18px; font-size: 14px; color: #475569;">
-          You requested a password reset for your Attendify account.
+          You requested a password reset for your ${safeBrand} account.
           This link is valid for <strong>${expiresMinutes} minutes</strong>
           and can be used only once.
         </p>
@@ -109,7 +124,7 @@ async function sendPasswordResetEmail({
         </p>
         <p style="margin: 14px 0 0; font-size: 12px; color: #94a3b8;">
           If you did not request this, ignore this message.
-          Never share this link with anyone. Attendify will never
+          Never share this link with anyone. ${safeBrand} will never
           ask for your password by email.
         </p>
       </div>

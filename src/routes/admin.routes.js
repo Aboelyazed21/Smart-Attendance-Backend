@@ -75,6 +75,32 @@ const {
 } = require("../controllers/adminNotifications.controller");
 
 // ============================================================
+// ADMIN EMAIL REPORTS CONTROLLER
+// ============================================================
+
+const {
+    getSettings: getEmailSettings,
+    updateSettings: updateEmailSettings,
+    send: sendWeeklyEmails,
+    test: sendTestEmail,
+    preview: previewWeeklyEmail,
+    logs: getEmailLogs,
+    retry: retryEmailLog,
+    status: getEmailStatus
+
+} = require("../controllers/adminEmailReports.controller");
+
+// ============================================================
+// ADMIN PLATFORM SETTINGS CONTROLLER
+// ============================================================
+
+const {
+    getSettings: getPlatformSettings,
+    updateSettings: updatePlatformSettings
+
+} = require("../controllers/adminSettings.controller");
+
+// ============================================================
 // ADMIN TEST
 // ============================================================
 
@@ -330,6 +356,84 @@ router.post(
     authenticate,
     requirePermission("user.manage"),
     runWeeklySummary
+);
+
+// ============================================================
+// WEEKLY EMAIL ATTENDANCE REPORTS (Resend)
+// ============================================================
+
+router.get(
+    "/weekly-reports/settings",
+    authenticate,
+    requirePermission("weekly_reports.view"),
+    getEmailSettings
+);
+
+router.patch(
+    "/weekly-reports/settings",
+    authenticate,
+    requirePermission("weekly_reports.manage"),
+    updateEmailSettings
+);
+
+router.post(
+    "/weekly-reports/send",
+    authenticate,
+    requirePermission("weekly_reports.send"),
+    sendWeeklyEmails
+);
+
+router.post(
+    "/weekly-reports/test",
+    authenticate,
+    requirePermission("weekly_reports.test"),
+    sendTestEmail
+);
+
+router.post(
+    "/weekly-reports/preview",
+    authenticate,
+    requirePermission("weekly_reports.view"),
+    previewWeeklyEmail
+);
+
+router.get(
+    "/weekly-reports/logs",
+    authenticate,
+    requirePermission("weekly_reports.view"),
+    getEmailLogs
+);
+
+router.post(
+    "/weekly-reports/retry/:id",
+    authenticate,
+    requirePermission("weekly_reports.retry"),
+    retryEmailLog
+);
+
+router.get(
+    "/weekly-reports/status",
+    authenticate,
+    requirePermission("weekly_reports.view"),
+    getEmailStatus
+);
+
+// ============================================================
+// PLATFORM SETTINGS (name + maintenance mode)
+// ============================================================
+
+router.get(
+    "/settings",
+    authenticate,
+    requirePermission("settings.view"),
+    getPlatformSettings
+);
+
+router.patch(
+    "/settings",
+    authenticate,
+    requirePermission("settings.manage"),
+    updatePlatformSettings
 );
 
 // ============================================================

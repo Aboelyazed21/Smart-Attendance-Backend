@@ -36,6 +36,8 @@ const studentAttendanceRoutes = require("./studentAttendance.routes");
 
 const adminRoutes = require("./admin.routes");
 
+const settingsRoutes = require("./settings.routes");
+
 const correctionRoutes = require("./correction.routes");
 
 // ============================================================
@@ -141,6 +143,15 @@ router.use(
 router.use(
   "/student/attendance",
   studentAttendanceRoutes
+);
+
+// ============================================================
+// PUBLIC PLATFORM SETTINGS (safe values only, no auth)
+// ============================================================
+
+router.use(
+  "/settings",
+  settingsRoutes
 );
 
 // ============================================================
