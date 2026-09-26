@@ -104,26 +104,101 @@ async function create(req, res) {
 }
 
 // ============================================================
-// LIST CORRECTION REQUESTS
+// LIST CORRECTION REQUESTS (STAFF INBOX)
+// GET /api/corrections?status=&sectionId=
+// Admin: all requests. Lecturer: only requests that belong
+// to own sections (sections.lecturer_id = me OR
+// sessions.opened_by = me).
 // ============================================================
 
 async function list(req, res) {
-  const [rows] = await pool.query(`
-    SELECT
-      cr.*,
-      sp.student_code,
-      CONCAT(
-        u.first_name,
-        ' ',
-        u.last_name
-      ) AS student_name
-    FROM correction_requests cr
-    JOIN student_profiles sp
-      ON sp.id = cr.student_id
-    JOIN users u
-      ON u.id = sp.user_id
-    ORDER BY cr.id DESC
-  `);
+  const currentUserId =
+    req.user?.id ?? req.user?.userId;
+
+  const currentRole = String(
+    req.user?.role ?? req.user?.role_name ?? ""
+  )
+    .toLowerCase()
+    .trim();
+
+  const isAdmin =
+    currentRole === "admin" ||
+    currentRole === "administrator";
+
+  const { status, sectionId } = req.query || {};
+
+  const conditions = [];
+  const params = [];
+
+  if (!isAdmin) {
+    conditions.push(`(
+      sec.lecturer_id = ?
+      OR ses.opened_by = ?
+    )`);
+    params.push(currentUserId, currentUserId);
+  }
+
+  if (
+    status &&
+    ["pending", "approved", "rejected"].includes(
+      String(status).toLowerCase()
+    )
+  ) {
+    conditions.push(`cr.status = ?`);
+    params.push(String(status).toLowerCase());
+  }
+
+  if (
+    sectionId !== undefined &&
+    sectionId !== null &&
+    String(sectionId).trim() !== ""
+  ) {
+    conditions.push(`sec.id = ?`);
+    params.push(Number(sectionId));
+  }
+
+  const where = conditions.length
+    ? `WHERE ${conditions.join(" AND ")}`
+    : "";
+
+  const [rows] = await pool.query(
+    `
+      SELECT
+        cr.*,
+        sp.student_code,
+        sp.id AS student_profile_id,
+        u.email AS student_email,
+        CONCAT(
+          u.first_name,
+          ' ',
+          u.last_name
+        ) AS student_name,
+        ae.status AS attendance_status,
+        ae.session_id,
+        ses.session_date,
+        ses.section_id,
+        sec.section_name,
+        sec.lecturer_id,
+        c.course_code,
+        c.course_name
+      FROM correction_requests cr
+      JOIN student_profiles sp
+        ON sp.id = cr.student_id
+      JOIN users u
+        ON u.id = sp.user_id
+      LEFT JOIN attendance_events ae
+        ON ae.id = cr.attendance_event_id
+      LEFT JOIN attendance_sessions ses
+        ON ses.id = ae.session_id
+      LEFT JOIN sections sec
+        ON sec.id = ses.section_id
+      LEFT JOIN courses c
+        ON c.id = sec.course_id
+      ${where}
+      ORDER BY cr.id DESC
+    `,
+    params
+  );
 
   return res.json(rows);
 }
@@ -164,19 +239,66 @@ async function myRequests(req, res) {
 
 // ============================================================
 // REVIEW CORRECTION REQUEST
+// PATCH /api/corrections/:id/review
+// Body accepts: { status|decision, reviewerComment|reviewer_comment|comment,
+//                 finalStatus|final_status }
+// Admin: any request. Lecturer: only own sections.
+// On approve, attendance is updated to finalStatus (if given)
+// otherwise to the student's requested_status.
 // ============================================================
 
 async function review(req, res) {
-  const {
-    status,
-    reviewerComment
-  } = req.body;
+  const body = req.body || {};
+
+  const rawStatus =
+    body.status ?? body.decision ?? body.finalStatus ?? "";
+
+  const status = String(rawStatus).toLowerCase();
+
+  const reviewerComment = String(
+    body.reviewerComment ??
+      body.reviewer_comment ??
+      body.comment ??
+      ""
+  ).trim();
+
+  const finalStatusRaw =
+    body.finalStatus ?? body.final_status ?? "";
+
+  const finalStatus = String(finalStatusRaw || "")
+    .toLowerCase()
+    .trim();
 
   if (!["approved", "rejected"].includes(status)) {
     return res.status(400).json({
       message: "Status must be approved or rejected"
     });
   }
+
+  if (
+    finalStatus &&
+    !["present", "absent", "late", "excused"].includes(
+      finalStatus
+    )
+  ) {
+    return res.status(400).json({
+      message:
+        "finalStatus must be present, absent, late, or excused"
+    });
+  }
+
+  const currentUserId =
+    req.user?.id ?? req.user?.userId;
+
+  const currentRole = String(
+    req.user?.role ?? req.user?.role_name ?? ""
+  )
+    .toLowerCase()
+    .trim();
+
+  const isAdmin =
+    currentRole === "admin" ||
+    currentRole === "administrator";
 
   const connection = await pool.getConnection();
 
@@ -185,9 +307,19 @@ async function review(req, res) {
 
     const [rows] = await connection.query(
       `
-        SELECT *
-        FROM correction_requests
-        WHERE id = ?
+        SELECT
+          cr.*,
+          ses.opened_by,
+          ses.section_id,
+          sec.lecturer_id
+        FROM correction_requests cr
+        LEFT JOIN attendance_events ae
+          ON ae.id = cr.attendance_event_id
+        LEFT JOIN attendance_sessions ses
+          ON ses.id = ae.session_id
+        LEFT JOIN sections sec
+          ON sec.id = ses.section_id
+        WHERE cr.id = ?
         FOR UPDATE
       `,
       [req.params.id]
@@ -203,6 +335,23 @@ async function review(req, res) {
 
     const request = rows[0];
 
+    if (!isAdmin) {
+      const owns =
+        Number(request.lecturer_id) ===
+          Number(currentUserId) ||
+        Number(request.opened_by) ===
+          Number(currentUserId);
+
+      if (!owns) {
+        await connection.rollback();
+
+        return res.status(403).json({
+          message:
+            "You are not authorized to review this request"
+        });
+      }
+    }
+
     await connection.query(
       `
         UPDATE correction_requests
@@ -215,7 +364,7 @@ async function review(req, res) {
       `,
       [
         status,
-        req.user.id,
+        currentUserId,
         reviewerComment || null,
         req.params.id
       ]
@@ -234,7 +383,7 @@ async function review(req, res) {
           WHERE id = ?
         `,
         [
-          request.requested_status,
+          finalStatus || request.requested_status,
           request.attendance_event_id
         ]
       );

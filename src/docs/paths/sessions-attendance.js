@@ -168,6 +168,16 @@ module.exports = {
     },
   },
   "/api/corrections": {
+    get: {
+      tags: ["Corrections"],
+      summary: "Staff correction inbox (lecturer sees own sections, admin sees all). Permission: correction.review.",
+      security: SEC,
+      parameters: [
+        { name: "status", in: "query", schema: { type: "string", enum: ["pending", "approved", "rejected"] } },
+        { name: "sectionId", in: "query", schema: { type: "integer" } },
+      ],
+      responses: { 200: { description: "Correction requests." }, 401: R401, 403: R403 },
+    },
     post: {
       tags: ["Corrections"],
       summary: "Student creates a correction request.",
@@ -191,12 +201,28 @@ module.exports = {
   "/api/corrections/{eventId}": {
     patch: {
       tags: ["Corrections"],
-      summary: "Review a correction request. Permission: attendance.update.",
+      summary: "Manual attendance correction by event id. Permission: attendance.update.",
       security: SEC,
       parameters: [idParam("eventId", "Attendance event id.")],
       requestBody: bodyRef("CorrectionReview"),
       responses: {
         200: { description: "Review saved." },
+        401: R401,
+        403: R403,
+        404: jsonRef("Error", "Not found."),
+      },
+    },
+  },
+  "/api/corrections/{id}/review": {
+    patch: {
+      tags: ["Corrections"],
+      summary: "Approve/reject a correction request. Permission: correction.review.",
+      security: SEC,
+      parameters: [idParam("id", "Correction request id.")],
+      requestBody: bodyRef("CorrectionReview"),
+      responses: {
+        200: { description: "Correction approved/rejected; attendance updated on approve." },
+        400: jsonRef("Error", "Validation error."),
         401: R401,
         403: R403,
         404: jsonRef("Error", "Not found."),

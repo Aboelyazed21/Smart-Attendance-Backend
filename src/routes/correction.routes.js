@@ -20,9 +20,37 @@ const {
 
 const {
   create,
+  list,
   myRequests,
+  review,
   updateAttendance,
 } = require("../controllers/corrections.controller");
+
+// ==========================================
+// STAFF CORRECTION INBOX (LECTURER / ADMIN)
+// ==========================================
+
+// GET /api/corrections?status=&sectionId=
+// Lecturer sees only own sections, admin sees all.
+router.get(
+  "/corrections",
+  authenticate,
+  requirePermission("correction.review"),
+  list
+);
+
+// ==========================================
+// REVIEW CORRECTION REQUEST
+// PATCH /api/corrections/:id/review
+// Body: { status: approved|rejected, reviewerComment?, finalStatus? }
+// ==========================================
+
+router.patch(
+  "/corrections/:id/review",
+  authenticate,
+  requirePermission("correction.review"),
+  review
+);
 
 // ==========================================
 // STUDENT CORRECTION REQUESTS
